@@ -3,7 +3,9 @@ package com.yuqiangdede;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.InterruptedIOException;
 import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,6 +21,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -60,30 +63,31 @@ public final class TileDownloader {
 
     private static Set<String> ALL_SOURCE_IDS = collectSourceIds(TILE_SOURCES);
     private static Map<String, Set<String>> DOWNLOAD_TYPE_PRESETS = createDownloadTypes();
+    private static final Set<String> DISABLED_SOURCES = ConcurrentHashMap.newKeySet();
     private TileDownloader() {
         throw new IllegalStateException("Utility class");
     }
 
     private static TileSource[] buildTileSources() {
         return new TileSource[] {
-            new TileSource("osm-standard", "OSM Standard", "https://tile.openstreetmap.org/", "osm-standard", "ZXY"),
+            new TileSource("osm-standard", "openstreet 标准", "https://tile.openstreetmap.org/", "osm-standard", "ZXY"),
             osmHotSource(),
             cycloSmSource(),
-            new TileSource("arcgis-topo", "ArcGIS Topographic", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/", "arcgis-topo", "ZYX"),
-            new TileSource("arcgis-imagery", "ArcGIS Imagery", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/", "arcgis-imagery", "ZYX"),
-            new TileSource("seamap-base", "OpenSeaMap Base", "https://t2.openseamap.org/tile/", "seamap-base", "ZXY"),
-            new TileSource("seamap-seamark", "OpenSeaMap Seamarks", "https://tiles.openseamap.org/seamark/", "seamap-seamark", "ZXY"),
-            gaodeSource("gaode-satellite", "Gaode Satellite", "6", "gaode-satellite", ".jpg"),
-            gaodeSource("gaode-hybrid", "Gaode Hybrid", "7", "gaode-hybrid", ".png"),
-            gaodeSource("gaode-roadnet", "Gaode Roadnet", "8", "gaode-roadnet", ".png"),
-            gaodeSource("gaode-light", "Gaode Light High POI", "9", "gaode-light", ".png"),
-            gaodeSource("gaode-light-poi", "Gaode Light Low POI", "10", "gaode-light-poi", ".png"),
-            googleSource("google-vector", "Google Vector", "m", "google-vector", ".png"),
-            googleSource("google-satellite", "Google Satellite", "s", "google-satellite", ".jpg"),
-            googleSource("google-hybrid", "Google Hybrid", "y", "google-hybrid", ".jpg"),
-            googleSource("google-terrain", "Google Terrain", "t", "google-terrain", ".png"),
-            googleSource("google-terrain-labels", "Google Terrain Labels", "p", "google-terrain-labels", ".png"),
-            googleSource("google-roads", "Google Roads Overlay", "h", "google-roads", ".png")
+            new TileSource("arcgis-topo", "ArcGIS 地形", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/", "arcgis-topo", "ZYX"),
+            new TileSource("arcgis-imagery", "ArcGIS 卫星", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/", "arcgis-imagery", "ZYX"),
+            new TileSource("seamap-base", "基础海图", "https://t2.openseamap.org/tile/", "seamap-base", "ZXY"),
+            new TileSource("seamap-seamark", "海图航标", "https://tiles.openseamap.org/seamark/", "seamap-seamark", "ZXY"),
+            gaodeSource("gaode-satellite", "高德-卫星", "6", "gaode-satellite", ".jpg"),
+            gaodeSource("gaode-hybrid", "高德-混合", "7", "gaode-hybrid", ".png"),
+            gaodeSource("gaode-roadnet", "高德-路网", "8", "gaode-roadnet", ".png"),
+            gaodeSource("gaode-light", "高德-浅1", "9", "gaode-light", ".png"),
+            gaodeSource("gaode-light-poi", "高德-浅2", "10", "gaode-light-poi", ".png"),
+            googleSource("google-vector", "谷歌-矢量图", "m", "google-vector", ".png"),
+            googleSource("google-satellite", "谷歌-卫星图", "s", "google-satellite", ".jpg"),
+            googleSource("google-hybrid", "谷歌-卫星+标注", "y", "google-hybrid", ".jpg"),
+            googleSource("google-terrain", "谷歌-地形图", "t", "google-terrain", ".png"),
+            googleSource("google-terrain-labels", "谷歌-地形+标注", "p", "google-terrain-labels", ".png"),
+            googleSource("google-roads", "谷歌-路网", "h", "google-roads", ".png")
         };
     }
 
@@ -110,6 +114,7 @@ public final class TileDownloader {
         LARGE_PROGRESS_STEP = config.getLargeProgressStep();
         BUFFER_SIZE = config.getBufferSize();
         DOWNLOAD_TYPE = config.getDownloadType();
+        DISABLED_SOURCES.clear();
         rebuildTileSources();
         configureProxy(config);
     }
@@ -158,6 +163,7 @@ public final class TileDownloader {
     }
 
     private static void execute(SourceFilter filter) throws InterruptedException {
+        DISABLED_SOURCES.clear();
         for (TileSource source : TILE_SOURCES) {
             if (!source.isSupported()) {
                 System.err.printf("Unsupported tile service %s (%s)%n", source.name, source.baseUrl);
@@ -237,6 +243,9 @@ public final class TileDownloader {
                                     int zoom,
                                     int x,
                                     int y) {
+        if (DISABLED_SOURCES.contains(source.id)) {
+            return;
+        }
         String url = buildTileUrl(source, zoom, x, y);
         if (url.isEmpty()) {
             return;
@@ -259,7 +268,11 @@ public final class TileDownloader {
                 System.out.printf("[%s] Completed %d/%d tiles, last file: %s%n", source.name, completed, totalTiles, displayPath);
             }
         } catch (IOException e) {
-            System.out.printf("[%s] %s: download failed (%s)%n", source.name, url, e.getMessage());
+            if (isTimeoutException(e)) {
+                disableSource(source, e);
+            } else {
+                System.out.printf("[%s] %s: download failed (%s)%n", source.name, url, e.getMessage());
+            }
         }
     }
 
@@ -411,7 +424,7 @@ public final class TileDownloader {
         String template = "https://tile-{s}.openstreetmap.fr/hot/{z}/{x}/{y}.png";
         return new TileSource(
             "osm-hot",
-            "OSM HOT",
+            "openstreet 人道要素",
             "https://tile.openstreetmap.fr/hot/",
             "osm-hot",
             "ZXY",
@@ -425,7 +438,7 @@ public final class TileDownloader {
         String template = "https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png";
         return new TileSource(
             "cyclosm",
-            "CyclOSM",
+            "openstreet 地形",
             "https://tile-cyclosm.openstreetmap.fr/cyclosm/",
             "cyclosm",
             "ZXY",
@@ -526,11 +539,55 @@ public final class TileDownloader {
         return Collections.unmodifiableMap(map);
     }
 
+    public static String buildTileUrlForPreview(String sourceId, int zoom, int x, int y) {
+        TileSource source = findSourceById(sourceId);
+        if (source == null) {
+            return null;
+        }
+        return buildTileUrl(source, zoom, x, y);
+    }
+
     public static Set<String> getDownloadTypeKeys() {
         LinkedHashSet<String> keys = new LinkedHashSet<>();
         keys.add("all");
         keys.addAll(DOWNLOAD_TYPE_PRESETS.keySet());
         return Collections.unmodifiableSet(keys);
+    }
+
+    private static boolean isTimeoutException(Throwable throwable) {
+        while (throwable != null) {
+            if (throwable instanceof SocketTimeoutException) {
+                return true;
+            }
+            if (throwable instanceof InterruptedIOException) {
+                return true;
+            }
+            String message = throwable.getMessage();
+            if (message != null && message.toLowerCase(Locale.ROOT).contains("timed out")) {
+                return true;
+            }
+            throwable = throwable.getCause();
+        }
+        return false;
+    }
+
+    private static void disableSource(TileSource source, Throwable cause) {
+        if (DISABLED_SOURCES.add(source.id)) {
+            String reason = cause != null && cause.getMessage() != null ? cause.getMessage() : "timeout";
+            System.out.printf("Source %s (%s) disabled due to timeout: %s%n", source.id, source.name, reason);
+        }
+    }
+
+    private static TileSource findSourceById(String id) {
+        if (id == null || id.isEmpty()) {
+            return null;
+        }
+        for (TileSource source : TILE_SOURCES) {
+            if (source.id.equals(id)) {
+                return source;
+            }
+        }
+        return null;
     }
 
     private static int calculateTotalTiles() {
