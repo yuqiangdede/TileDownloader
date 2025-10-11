@@ -115,3 +115,16 @@ java -cp target/MapDownloader-1.0-SNAPSHOT.jar com.yuqiangdede.TileDownloader --
 ## 备注
 - 瓦片服务器通常对批量抓取存在限制，建议遵守服务条款、合理设置线程数，并注意限速。
 - 若要添加新的地图服务，可参考现有 `TILE_SOURCES` 的构造方式，设置好 URL 模板、模式以及输出目录。
+### 图形界面（可选）
+想通过可视化方式调整经纬度和地图源，可启动 Swing 界面：
+
+```powershell
+java -cp target/MapDownloader-1.0-SNAPSHOT.jar com.yuqiangdede.TileDownloaderUI
+```
+
+界面内支持：
+
+- 选择输出目录、经纬度范围、缩放等级及并发线程数
+- 通过下拉框选择预置下载类型，或切换为手动多选地图源
+- 可选开启 SOCKS 代理（默认主机 `127.0.0.1`，端口可自定义）
+- 在同一窗口查看实时日志输出

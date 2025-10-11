@@ -28,27 +28,27 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class TileDownloader {
 
     // 下载结果的根目录
-    private static final Path BASE_DIRECTORY = Paths.get("D:\\temp");
+    private static Path BASE_DIRECTORY = Paths.get("D:\\temp");
 
     // 经纬度范围（西→东 / 南→北）
-    private static final double START_LON = 117;
-    private static final double START_LAT = 38;
-    private static final double END_LON = 118;
-    private static final double END_LAT = 39;
+    private static double START_LON = 117;
+    private static double START_LAT = 38;
+    private static double END_LON = 118;
+    private static double END_LAT = 39;
 
     // 缩放层级与并发控制
-    private static final int MIN_ZOOM = 0;
-    private static final int MAX_ZOOM = 12;
-    private static final int THREADS = 16;
-    private static final int START = 0;
+    private static int MIN_ZOOM = 0;
+    private static int MAX_ZOOM = 12;
+    private static int THREADS = 16;
+    private static int START = 0;
 
     // 日志输出与缓冲设置
-    private static final int PROGRESS_STEP = 100;
-    private static final int LARGE_PROGRESS_STEP = 10_000;
-    private static final int BUFFER_SIZE = 8 * 1024;
+    private static int PROGRESS_STEP = 100;
+    private static int LARGE_PROGRESS_STEP = 10_000;
+    private static int BUFFER_SIZE = 8 * 1024;
 
     // 默认启用的瓦片源分组（可改为 osm、gaode、google 等）
-    private static final String DOWNLOAD_TYPE = "all";
+    private static String DOWNLOAD_TYPE = "all";
 
     // 常见服务的子域轮询配置
     private static final String[] GAODE_SUBDOMAINS = new String[] {"webst01", "webst02", "webst03", "webst04"};
@@ -56,31 +56,79 @@ public final class TileDownloader {
     private static final String[] OSM_FR_HOT_SUBDOMAINS = new String[] {"a", "b", "c"};
     private static final String[] CYCLOSM_SUBDOMAINS = new String[] {"a", "b", "c"};
 
-    private static final TileSource[] TILE_SOURCES = new TileSource[] {
-        new TileSource("osm-standard", "OSM Standard", "https://tile.openstreetmap.org/", "osm-standard", "ZXY"),
-        osmHotSource(),
-        cycloSmSource(),
-        new TileSource("arcgis-topo", "ArcGIS Topographic", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/", "arcgis-topo", "ZYX"),
-        new TileSource("arcgis-imagery", "ArcGIS Imagery", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/", "arcgis-imagery", "ZYX"),
-        new TileSource("seamap-base", "OpenSeaMap Base", "https://t2.openseamap.org/tile/", "seamap-base", "ZXY"),
-        new TileSource("seamap-seamark", "OpenSeaMap Seamarks", "https://tiles.openseamap.org/seamark/", "seamap-seamark", "ZXY"),
-        gaodeSource("gaode-satellite", "Gaode Satellite", "6", "gaode-satellite", ".jpg"),
-        gaodeSource("gaode-hybrid", "Gaode Hybrid", "7", "gaode-hybrid", ".png"),
-        gaodeSource("gaode-roadnet", "Gaode Roadnet", "8", "gaode-roadnet", ".png"),
-        gaodeSource("gaode-light", "Gaode Light High POI", "9", "gaode-light", ".png"),
-        gaodeSource("gaode-light-poi", "Gaode Light Low POI", "10", "gaode-light-poi", ".png"),
-        googleSource("google-vector", "Google Vector", "m", "google-vector", ".png"),
-        googleSource("google-satellite", "Google Satellite", "s", "google-satellite", ".jpg"),
-        googleSource("google-hybrid", "Google Hybrid", "y", "google-hybrid", ".jpg"),
-        googleSource("google-terrain", "Google Terrain", "t", "google-terrain", ".png"),
-        googleSource("google-terrain-labels", "Google Terrain Labels", "p", "google-terrain-labels", ".png"),
-        googleSource("google-roads", "Google Roads Overlay", "h", "google-roads", ".png")
-    };
+    private static TileSource[] TILE_SOURCES = buildTileSources();
 
-    private static final Set<String> ALL_SOURCE_IDS = collectSourceIds(TILE_SOURCES);
-    private static final Map<String, Set<String>> DOWNLOAD_TYPES = createDownloadTypes();
+    private static Set<String> ALL_SOURCE_IDS = collectSourceIds(TILE_SOURCES);
+    private static Map<String, Set<String>> DOWNLOAD_TYPE_PRESETS = createDownloadTypes();
     private TileDownloader() {
         throw new IllegalStateException("Utility class");
+    }
+
+    private static TileSource[] buildTileSources() {
+        return new TileSource[] {
+            new TileSource("osm-standard", "OSM Standard", "https://tile.openstreetmap.org/", "osm-standard", "ZXY"),
+            osmHotSource(),
+            cycloSmSource(),
+            new TileSource("arcgis-topo", "ArcGIS Topographic", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/", "arcgis-topo", "ZYX"),
+            new TileSource("arcgis-imagery", "ArcGIS Imagery", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/", "arcgis-imagery", "ZYX"),
+            new TileSource("seamap-base", "OpenSeaMap Base", "https://t2.openseamap.org/tile/", "seamap-base", "ZXY"),
+            new TileSource("seamap-seamark", "OpenSeaMap Seamarks", "https://tiles.openseamap.org/seamark/", "seamap-seamark", "ZXY"),
+            gaodeSource("gaode-satellite", "Gaode Satellite", "6", "gaode-satellite", ".jpg"),
+            gaodeSource("gaode-hybrid", "Gaode Hybrid", "7", "gaode-hybrid", ".png"),
+            gaodeSource("gaode-roadnet", "Gaode Roadnet", "8", "gaode-roadnet", ".png"),
+            gaodeSource("gaode-light", "Gaode Light High POI", "9", "gaode-light", ".png"),
+            gaodeSource("gaode-light-poi", "Gaode Light Low POI", "10", "gaode-light-poi", ".png"),
+            googleSource("google-vector", "Google Vector", "m", "google-vector", ".png"),
+            googleSource("google-satellite", "Google Satellite", "s", "google-satellite", ".jpg"),
+            googleSource("google-hybrid", "Google Hybrid", "y", "google-hybrid", ".jpg"),
+            googleSource("google-terrain", "Google Terrain", "t", "google-terrain", ".png"),
+            googleSource("google-terrain-labels", "Google Terrain Labels", "p", "google-terrain-labels", ".png"),
+            googleSource("google-roads", "Google Roads Overlay", "h", "google-roads", ".png")
+        };
+    }
+
+    private static void rebuildTileSources() {
+        TILE_SOURCES = buildTileSources();
+        ALL_SOURCE_IDS = collectSourceIds(TILE_SOURCES);
+        DOWNLOAD_TYPE_PRESETS = createDownloadTypes();
+    }
+
+    private static void applyConfig(TileDownloadConfig config) {
+        if (config == null) {
+            return;
+        }
+        BASE_DIRECTORY = config.getBaseDirectory();
+        START_LON = config.getStartLon();
+        START_LAT = config.getStartLat();
+        END_LON = config.getEndLon();
+        END_LAT = config.getEndLat();
+        MIN_ZOOM = config.getMinZoom();
+        MAX_ZOOM = config.getMaxZoom();
+        THREADS = config.getThreads();
+        START = config.getStartOffset();
+        PROGRESS_STEP = config.getProgressStep();
+        LARGE_PROGRESS_STEP = config.getLargeProgressStep();
+        BUFFER_SIZE = config.getBufferSize();
+        DOWNLOAD_TYPE = config.getDownloadType();
+        rebuildTileSources();
+        configureProxy(config);
+    }
+
+    private static void configureProxy(TileDownloadConfig config) {
+        if (config.isUseProxy()) {
+            String host = config.getProxyHost() == null ? "" : config.getProxyHost().trim();
+            int port = config.getProxyPort();
+            if (!host.isEmpty() && port > 0) {
+                System.setProperty("socksProxyHost", host);
+                System.setProperty("socksProxyPort", Integer.toString(port));
+            } else {
+                System.clearProperty("socksProxyHost");
+                System.clearProperty("socksProxyPort");
+            }
+        } else {
+            System.clearProperty("socksProxyHost");
+            System.clearProperty("socksProxyPort");
+        }
     }
 
     /**
@@ -95,6 +143,25 @@ public final class TileDownloader {
         SourceFilter filter = parseSourceFilter(args);
         if (!filter.unknownIds.isEmpty()) {
             System.err.printf("Unknown tile source ids: %s%n", String.join(", ", filter.unknownIds));
+        }
+
+        execute(filter);
+    }
+
+    public static void run(TileDownloadConfig config) throws InterruptedException {
+        applyConfig(config);
+        SourceFilter filter = createSourceFilterFromConfig(config);
+        if (!filter.unknownIds.isEmpty()) {
+            System.err.printf("Unknown tile source ids: %s%n", String.join(", ", filter.unknownIds));
+        }
+        execute(filter);
+    }
+
+    private static void execute(SourceFilter filter) throws InterruptedException {
+        for (TileSource source : TILE_SOURCES) {
+            if (!source.isSupported()) {
+                System.err.printf("Unsupported tile service %s (%s)%n", source.name, source.baseUrl);
+            }
         }
 
         TileSource[] supportedSources = Arrays.stream(TILE_SOURCES)
@@ -196,6 +263,36 @@ public final class TileDownloader {
         }
     }
 
+    private static SourceFilter createSourceFilterFromConfig(TileDownloadConfig config) {
+        if (config == null || !config.isUseExplicitSources()) {
+            return SourceFilter.all();
+        }
+
+        Set<String> normalizedIds = new LinkedHashSet<>();
+        Set<String> unknownIds = new LinkedHashSet<>();
+        for (String id : config.getSelectedSourceIds()) {
+            String normalized = normalizeId(id);
+            if (normalized.isEmpty()) {
+                continue;
+            }
+            if (ALL_SOURCE_IDS.contains(normalized)) {
+                normalizedIds.add(normalized);
+            } else {
+                unknownIds.add(normalized);
+            }
+        }
+
+        if (!unknownIds.isEmpty()) {
+            System.err.printf("Unknown tile source ids: %s%n", String.join(", ", unknownIds));
+        }
+
+        normalizedIds.removeAll(unknownIds);
+        if (normalizedIds.isEmpty()) {
+            return new SourceFilter(false, new LinkedHashSet<>(), unknownIds);
+        }
+        return new SourceFilter(true, normalizedIds, unknownIds);
+    }
+
     private static SourceFilter parseSourceFilter(String[] args) {
         Set<String> knownIds = new HashSet<>();
         for (TileSource source : TILE_SOURCES) {
@@ -255,7 +352,7 @@ public final class TileDownloader {
     private static String formatTypeIds() {
         Set<String> values = new LinkedHashSet<>();
         values.add("all");
-        values.addAll(DOWNLOAD_TYPES.keySet());
+        values.addAll(DOWNLOAD_TYPE_PRESETS.keySet());
         values.addAll(ALL_SOURCE_IDS);
         StringBuilder builder = new StringBuilder();
         int index = 0;
@@ -289,7 +386,7 @@ public final class TileDownloader {
                 selection.add(normalized);
                 continue;
             }
-            Set<String> preset = DOWNLOAD_TYPES.get(normalized);
+            Set<String> preset = DOWNLOAD_TYPE_PRESETS.get(normalized);
             if (preset != null) {
                 selection.addAll(preset);
                 continue;
@@ -419,6 +516,21 @@ public final class TileDownloader {
         if (!normalizedSources.isEmpty()) {
             types.put(normalizedType, Collections.unmodifiableSet(new LinkedHashSet<>(normalizedSources)));
         }
+    }
+
+    public static Map<String, String> getSourceDisplayNames() {
+        LinkedHashMap<String, String> map = new LinkedHashMap<>();
+        for (TileSource source : TILE_SOURCES) {
+            map.put(source.id, source.name);
+        }
+        return Collections.unmodifiableMap(map);
+    }
+
+    public static Set<String> getDownloadTypeKeys() {
+        LinkedHashSet<String> keys = new LinkedHashSet<>();
+        keys.add("all");
+        keys.addAll(DOWNLOAD_TYPE_PRESETS.keySet());
+        return Collections.unmodifiableSet(keys);
     }
 
     private static int calculateTotalTiles() {
