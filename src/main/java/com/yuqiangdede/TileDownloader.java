@@ -27,24 +27,30 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 public final class TileDownloader {
 
+    // 下载结果的根目录
     private static final Path BASE_DIRECTORY = Paths.get("D:\\temp");
 
+    // 经纬度范围（西→东 / 南→北）
     private static final double START_LON = 117;
     private static final double START_LAT = 38;
     private static final double END_LON = 118;
     private static final double END_LAT = 39;
 
+    // 缩放层级与并发控制
     private static final int MIN_ZOOM = 0;
     private static final int MAX_ZOOM = 12;
     private static final int THREADS = 16;
     private static final int START = 0;
 
+    // 日志输出与缓冲设置
     private static final int PROGRESS_STEP = 100;
     private static final int LARGE_PROGRESS_STEP = 10_000;
     private static final int BUFFER_SIZE = 8 * 1024;
 
+    // 默认启用的瓦片源分组（可改为 osm、gaode、google 等）
     private static final String DOWNLOAD_TYPE = "all";
 
+    // 常见服务的子域轮询配置
     private static final String[] GAODE_SUBDOMAINS = new String[] {"webst01", "webst02", "webst03", "webst04"};
     private static final String[] GOOGLE_SUBDOMAINS = new String[] {"mt0", "mt1", "mt2", "mt3"};
     private static final String[] OSM_FR_HOT_SUBDOMAINS = new String[] {"a", "b", "c"};
