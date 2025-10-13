@@ -1,0 +1,2 @@
+描述 高德的纯卫星瓦片，没有路网
+示例url https://webst03.is.autonavi.com/appmaptile?style=6&x=13661&y=6747&z=14

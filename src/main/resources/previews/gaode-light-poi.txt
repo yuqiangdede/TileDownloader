@@ -1,0 +1,2 @@
+描述 高德的矢量混合路网图层，底色较浅，字少一些，标记多一些
+示例url https://webst03.is.autonavi.com/appmaptile?style=10&x=13666&y=6744&z=14
