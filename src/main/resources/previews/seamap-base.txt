@@ -1,3 +1,3 @@
-TODO
+OpenSeaMap 基础海图在 OSM 数据上叠加了海岸线、深度等海洋信息，为沿海航行和海上活动提供底图支持。
 注意 底图没有各种海图要素，要和海图要素配合使用
 示例url https://t2.openseamap.org/tile/15/27462/13451.png
