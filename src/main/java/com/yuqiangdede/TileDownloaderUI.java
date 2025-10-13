@@ -1,16 +1,22 @@
 package com.yuqiangdede;
 
 import java.awt.BorderLayout;
+import java.awt.CardLayout;
+import java.awt.Color;
 import java.awt.Component;
-import java.awt.Font;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
+import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
+import java.awt.Image;
 import java.awt.Insets;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
+import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.net.URL;
@@ -20,16 +26,21 @@ import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import javax.imageio.ImageIO;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.BoxLayout;
+import javax.swing.ImageIcon;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.JEditorPane;
 import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -41,18 +52,22 @@ import javax.swing.JSpinner;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
+import javax.swing.Timer;
 import javax.swing.ToolTipManager;
 import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
 import javax.swing.border.TitledBorder;
 
+import java.util.Optional;
 public final class TileDownloaderUI {
 
     private static final String PREVIEW_BASE_PATH = "/previews/";
     private static final String[] PREVIEW_TEXT_EXTENSIONS = {".html", ".htm", ".md", ".txt"};
     private static final String[] PREVIEW_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif"};
+    private static final Pattern URL_PATTERN = Pattern.compile("(https?://[^\\s<>\"]+)");
 
     private TileDownloaderUI() {
     }
@@ -130,7 +145,7 @@ public final class TileDownloaderUI {
         addRow(settingsPanel, gbc, "纬度范围", rangePanel(minLatField, maxLatField));
         Map<String, String> sourceDisplayNames = TileDownloader.getSourceDisplayNames();
         List<SourceEntry> sourceEntries = new ArrayList<>();
-        Map<String, SourcePreview> previewCache = new LinkedHashMap<>();
+        Map<String, Optional<SourcePreview>> previewCache = new LinkedHashMap<>();
         LinkedHashMap<String, List<SourceEntry>> groupedSources = new LinkedHashMap<>();
         // Normalise display names so related sources (e.g. multiple Gaode flavours) share the same row.
         Map<String, String> groupOverrides = Map.of(
@@ -170,11 +185,14 @@ public final class TileDownloaderUI {
             String override = groupOverrides.getOrDefault(groupName, groupName);
             groupName = override;
             JCheckBox box = new JCheckBox(itemLabel, false);
-            SourceEntry entryRecord = new SourceEntry(entry.getKey(), displayName, box);
-            SourcePreview preview = previewCache.computeIfAbsent(entry.getKey(), TileDownloaderUI::loadPreview);
-            if (preview != null) {
-                box.setToolTipText(preview.tooltipHtml(entryRecord.name()));
+            Optional<SourcePreview> cachedPreview = previewCache.get(entry.getKey());
+            if (cachedPreview == null) {
+                SourcePreview loaded = loadPreview(entry.getKey());
+                cachedPreview = Optional.ofNullable(loaded);
+                previewCache.put(entry.getKey(), cachedPreview);
             }
+            SourcePreview preview = cachedPreview.orElse(null);
+            SourceEntry entryRecord = new SourceEntry(entry.getKey(), displayName, box, preview);
             sourceEntries.add(entryRecord);
             groupedSources.computeIfAbsent(groupName, key -> new ArrayList<>()).add(entryRecord);
         }
@@ -238,12 +256,20 @@ public final class TileDownloaderUI {
         logArea.setLineWrap(true);
         logArea.setWrapStyleWord(true);
         JScrollPane logScroll = new JScrollPane(logArea);
-        logScroll.setBorder(new TitledBorder("下载日志"));
+        logScroll.setBorder(BorderFactory.createEmptyBorder());
         logScroll.setPreferredSize(new Dimension(640, 360));
+        PreviewPanel previewPanel = new PreviewPanel();
+        CardLayout logCardLayout = new CardLayout();
+        JPanel logCardPanel = new JPanel(logCardLayout);
+        logCardPanel.setBorder(new TitledBorder("下载日志"));
+        logCardPanel.add(logScroll, "log");
+        logCardPanel.add(previewPanel, "preview");
+        logCardLayout.show(logCardPanel, "log");
+        PreviewDisplay previewDisplay = new PreviewDisplay(logCardPanel, logCardLayout, previewPanel);
         JPanel centerPanel = new JPanel(new BorderLayout(10, 0));
         centerPanel.setBorder(BorderFactory.createEmptyBorder(10, 20, 10, 10));
         centerPanel.add(leftPanel, BorderLayout.WEST);
-        centerPanel.add(logScroll, BorderLayout.CENTER);
+        centerPanel.add(logCardPanel, BorderLayout.CENTER);
         frame.add(centerPanel, BorderLayout.CENTER);
         JPanel bottomPanel = new JPanel(new BorderLayout());
         bottomPanel.setBorder(BorderFactory.createEmptyBorder(0, 10, 10, 10));
@@ -265,7 +291,18 @@ public final class TileDownloaderUI {
             startButton.setEnabled(hasSelection);
         };
         for (SourceEntry entry : sourceEntries) {
-            entry.checkBox().addActionListener(e -> updateSourceSelection.run());
+            JCheckBox box = entry.checkBox();
+            box.addActionListener(e -> updateSourceSelection.run());
+            box.addMouseListener(new MouseAdapter() {
+                @Override
+                public void mouseEntered(MouseEvent e) {
+                    previewDisplay.showPreview(entry.name(), entry.preview());
+                }
+                @Override
+                public void mouseExited(MouseEvent e) {
+                    previewDisplay.hidePreview();
+                }
+            });
         }
         selectAllButton.addActionListener(e -> {
             sourceEntries.forEach(entry -> entry.checkBox().setSelected(true));
@@ -462,6 +499,14 @@ public final class TileDownloaderUI {
                 break;
             }
         }
+        BufferedImage image = null;
+        if (imageUrl != null) {
+            try (InputStream stream = imageUrl.openStream()) {
+                image = ImageIO.read(stream);
+            } catch (IOException ex) {
+                System.err.println("读取地图源示意图失败：" + imageUrl + "，原因：" + ex.getMessage());
+            }
+        }
         String description = null;
         boolean descriptionIsHtml = false;
         for (String extension : PREVIEW_TEXT_EXTENSIONS) {
@@ -474,13 +519,13 @@ public final class TileDownloaderUI {
                 descriptionIsHtml = ".html".equalsIgnoreCase(extension) || ".htm".equalsIgnoreCase(extension);
                 break;
             } catch (IOException ex) {
-                System.err.println("读取地图源预览文件失败：" + resourcePath + "，原因：" + ex.getMessage());
+                System.err.println("读取地图源预览说明失败：" + resourcePath + "，原因：" + ex.getMessage());
             }
         }
-        if ((description == null || description.isBlank()) && imageUrl == null) {
+        if ((description == null || description.isBlank()) && image == null) {
             return null;
         }
-        return new SourcePreview(description, descriptionIsHtml, imageUrl);
+        return new SourcePreview(description, descriptionIsHtml, imageUrl, image);
     }
 
     private static String escapeHtml(String value) {
@@ -494,11 +539,19 @@ public final class TileDownloaderUI {
             .replace("\"", "&quot;");
     }
 
-    private static String toHtmlLines(String value) {
+    private static String plainTextToHtml(String value) {
         if (value == null || value.isEmpty()) {
             return "";
         }
-        return escapeHtml(value)
+        String escaped = escapeHtml(value);
+        Matcher matcher = URL_PATTERN.matcher(escaped);
+        StringBuffer buffer = new StringBuffer();
+        while (matcher.find()) {
+            String url = matcher.group(1);
+            matcher.appendReplacement(buffer, "<a href=\"" + url + "\">" + url + "</a>");
+        }
+        matcher.appendTail(buffer);
+        return buffer.toString()
             .replace("\r\n", "<br>")
             .replace("\r", "<br>")
             .replace("\n", "<br>");
@@ -570,36 +623,164 @@ public final class TileDownloaderUI {
         }
     }
 
-    private record SourceEntry(String id, String name, JCheckBox checkBox) {
+    private static final class PreviewDisplay {
+        private final JPanel container;
+        private final CardLayout layout;
+        private final PreviewPanel previewPanel;
+        private final Timer hideTimer;
+
+        private PreviewDisplay(JPanel container, CardLayout layout, PreviewPanel previewPanel) {
+            this.container = container;
+            this.layout = layout;
+            this.previewPanel = previewPanel;
+            this.hideTimer = new Timer(200, e -> this.layout.show(this.container, "log"));
+            this.hideTimer.setRepeats(false);
+        }
+
+        private void showPreview(String title, SourcePreview preview) {
+            hideTimer.stop();
+            previewPanel.updateContent(title, preview);
+            layout.show(container, "preview");
+            previewPanel.refreshImage();
+        }
+
+        private void hidePreview() {
+            hideTimer.restart();
+        }
     }
 
-    private record SourcePreview(String description, boolean descriptionIsHtml, URL imageUrl) {
-        private String tooltipHtml(String title) {
-            StringBuilder html = new StringBuilder("<html><body>");
-            boolean hasContent = false;
+    private static final class PreviewPanel extends JPanel {
+        private static final Color ACCENT_COLOR = new Color(0xCC0000);
+        private static final Dimension IMAGE_AREA = new Dimension(520, 320);
+        private final JEditorPane descriptionPane;
+        private final JLabel imageLabel;
+        private SourcePreview currentPreview;
+
+        private PreviewPanel() {
+            setOpaque(true);
+            setBackground(Color.WHITE);
+            setLayout(new BorderLayout(12, 12));
+            setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createEmptyBorder(10, 10, 10, 10),
+                BorderFactory.createCompoundBorder(
+                    BorderFactory.createLineBorder(ACCENT_COLOR, 1, true),
+                    BorderFactory.createEmptyBorder(12, 12, 12, 12)
+                )
+            ));
+            descriptionPane = new JEditorPane();
+            descriptionPane.setEditable(false);
+            descriptionPane.setOpaque(false);
+            descriptionPane.setContentType("text/html");
+            descriptionPane.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
+            descriptionPane.setFont(descriptionPane.getFont().deriveFont(Font.PLAIN, 13f));
+            imageLabel = new JLabel();
+            imageLabel.setOpaque(true);
+            imageLabel.setBackground(Color.WHITE);
+            imageLabel.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(ACCENT_COLOR, 1, true),
+                BorderFactory.createEmptyBorder(12, 12, 12, 12)
+            ));
+            imageLabel.setPreferredSize(IMAGE_AREA);
+            imageLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            imageLabel.setVerticalAlignment(SwingConstants.CENTER);
+            imageLabel.setForeground(ACCENT_COLOR);
+            add(descriptionPane, BorderLayout.NORTH);
+            add(imageLabel, BorderLayout.CENTER);
+        }
+
+        private void updateContent(String title, SourcePreview preview) {
+            this.currentPreview = preview;
+            if (preview != null) {
+                descriptionPane.setText(preview.buildDescriptionHtml(title));
+            } else {
+                descriptionPane.setText(buildFallbackDescription(title));
+            }
+            descriptionPane.setCaretPosition(0);
+            applyImage();
+        }
+
+        private void applyImage() {
+            SourcePreview preview = currentPreview;
+            if (preview != null && preview.hasImage()) {
+                Dimension size = imageLabel.getSize();
+                if (size.width <= 0 || size.height <= 0) {
+                    size = imageLabel.getPreferredSize();
+                }
+                int availableWidth = Math.max(1, size.width - 24);
+                int availableHeight = Math.max(1, size.height - 24);
+                ImageIcon icon = preview.scaledIcon(availableWidth, availableHeight);
+                if (icon != null) {
+                    imageLabel.setIcon(icon);
+                    imageLabel.setText(null);
+                    return;
+                }
+            }
+            imageLabel.setIcon(null);
+            imageLabel.setText("暂无示意图片");
+        }
+
+        private void refreshImage() {
+            SwingUtilities.invokeLater(this::applyImage);
+        }
+
+        private static String buildFallbackDescription(String title) {
+            StringBuilder html = new StringBuilder("<html><body style='margin:0;font-family:\"Microsoft YaHei\",sans-serif;font-size:13px;color:#cc0000;'>");
             if (title != null && !title.isBlank()) {
-                html.append("<b>").append(escapeHtml(title)).append("</b>");
-                hasContent = true;
+                html.append("<div style='font-weight:bold;margin-bottom:6px;'>")
+                    .append(escapeHtml(title))
+                    .append("</div>");
+            }
+            html.append("<div>暂未提供该地图源的示意信息。</div>");
+            html.append("</body></html>");
+            return html.toString();
+        }
+    }
+
+    private record SourceEntry(String id, String name, JCheckBox checkBox, SourcePreview preview) {
+    }
+
+    private record SourcePreview(String description, boolean descriptionIsHtml, URL imageUrl, BufferedImage image) {
+        private String buildDescriptionHtml(String title) {
+            StringBuilder html = new StringBuilder("<html><body style='margin:0;font-family:\"Microsoft YaHei\",sans-serif;font-size:13px;color:#cc0000;'>");
+            if (title != null && !title.isBlank()) {
+                html.append("<div style='font-weight:bold;margin-bottom:6px;'>")
+                    .append(escapeHtml(title))
+                    .append("</div>");
             }
             if (description != null && !description.isBlank()) {
-                if (hasContent) {
-                    html.append("<br>");
-                }
                 if (descriptionIsHtml) {
-                    html.append(description);
+                    html.append("<div>").append(description).append("</div>");
                 } else {
-                    html.append(toHtmlLines(description));
+                    html.append("<div>").append(plainTextToHtml(description)).append("</div>");
                 }
-                hasContent = true;
-            }
-            if (imageUrl != null) {
-                if (hasContent) {
-                    html.append("<br>");
-                }
-                html.append("<img src=\"").append(imageUrl.toExternalForm()).append("\" width=\"260\"/>");
+            } else {
+                html.append("<div>暂无文字说明。</div>");
             }
             html.append("</body></html>");
             return html.toString();
+        }
+
+        private boolean hasImage() {
+            return image != null;
+        }
+
+        private ImageIcon scaledIcon(int maxWidth, int maxHeight) {
+            if (image == null || maxWidth <= 0 || maxHeight <= 0) {
+                return null;
+            }
+            int originalWidth = image.getWidth();
+            int originalHeight = image.getHeight();
+            double scale = Math.min((double) maxWidth / originalWidth, (double) maxHeight / originalHeight);
+            if (scale > 1.0) {
+                scale = 1.0;
+            }
+            int width = Math.max(1, (int) Math.round(originalWidth * scale));
+            int height = Math.max(1, (int) Math.round(originalHeight * scale));
+            if (width == originalWidth && height == originalHeight) {
+                return new ImageIcon(image);
+            }
+            Image scaled = image.getScaledInstance(width, height, Image.SCALE_SMOOTH);
+            return new ImageIcon(scaled);
         }
     }
 }
