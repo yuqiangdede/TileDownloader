@@ -1,5 +1,8 @@
 package com.yuqiangdede;
 
+import lombok.Getter;
+import lombok.Setter;
+
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Collections;
@@ -10,6 +13,9 @@ import java.util.Set;
 /**
  * Mutable configuration container for tile download tasks.
  */
+@Getter
+@Setter
+
 public final class TileDownloadConfig {
 
     private Path baseDirectory;
@@ -62,109 +68,6 @@ public final class TileDownloadConfig {
         return builder().build();
     }
 
-    public Path getBaseDirectory() {
-        return baseDirectory;
-    }
-
-    public void setBaseDirectory(Path baseDirectory) {
-        this.baseDirectory = Objects.requireNonNull(baseDirectory, "baseDirectory");
-    }
-
-    public double getStartLon() {
-        return startLon;
-    }
-
-    public void setStartLon(double startLon) {
-        this.startLon = startLon;
-    }
-
-    public double getStartLat() {
-        return startLat;
-    }
-
-    public void setStartLat(double startLat) {
-        this.startLat = startLat;
-    }
-
-    public double getEndLon() {
-        return endLon;
-    }
-
-    public void setEndLon(double endLon) {
-        this.endLon = endLon;
-    }
-
-    public double getEndLat() {
-        return endLat;
-    }
-
-    public void setEndLat(double endLat) {
-        this.endLat = endLat;
-    }
-
-    public int getMinZoom() {
-        return minZoom;
-    }
-
-    public void setMinZoom(int minZoom) {
-        this.minZoom = minZoom;
-    }
-
-    public int getMaxZoom() {
-        return maxZoom;
-    }
-
-    public void setMaxZoom(int maxZoom) {
-        this.maxZoom = maxZoom;
-    }
-
-    public int getThreads() {
-        return threads;
-    }
-
-    public void setThreads(int threads) {
-        this.threads = threads;
-    }
-
-    public int getStartOffset() {
-        return startOffset;
-    }
-
-    public void setStartOffset(int startOffset) {
-        this.startOffset = startOffset;
-    }
-
-    public int getProgressStep() {
-        return progressStep;
-    }
-
-    public void setProgressStep(int progressStep) {
-        this.progressStep = progressStep;
-    }
-
-    public int getLargeProgressStep() {
-        return largeProgressStep;
-    }
-
-    public void setLargeProgressStep(int largeProgressStep) {
-        this.largeProgressStep = largeProgressStep;
-    }
-
-    public int getBufferSize() {
-        return bufferSize;
-    }
-
-    public void setBufferSize(int bufferSize) {
-        this.bufferSize = bufferSize;
-    }
-
-    public String getDownloadType() {
-        return downloadType;
-    }
-
-    public void setDownloadType(String downloadType) {
-        this.downloadType = downloadType == null ? "all" : downloadType;
-    }
 
     public Set<String> getSelectedSourceIds() {
         return Collections.unmodifiableSet(selectedSourceIds);
@@ -182,37 +85,6 @@ public final class TileDownloadConfig {
         this.useExplicitSources = !this.selectedSourceIds.isEmpty();
     }
 
-    public boolean isUseExplicitSources() {
-        return useExplicitSources;
-    }
-
-    public void setUseExplicitSources(boolean useExplicitSources) {
-        this.useExplicitSources = useExplicitSources;
-    }
-
-    public boolean isUseProxy() {
-        return useProxy;
-    }
-
-    public void setUseProxy(boolean useProxy) {
-        this.useProxy = useProxy;
-    }
-
-    public String getProxyHost() {
-        return proxyHost;
-    }
-
-    public void setProxyHost(String proxyHost) {
-        this.proxyHost = proxyHost;
-    }
-
-    public int getProxyPort() {
-        return proxyPort;
-    }
-
-    public void setProxyPort(int proxyPort) {
-        this.proxyPort = proxyPort;
-    }
 
     public static final class Builder {
         private Path baseDirectory = Paths.get("D:\\temp");
@@ -223,10 +95,10 @@ public final class TileDownloadConfig {
         private int minZoom = 0;
         private int maxZoom = 12;
         private int threads = 16;
-        private int startOffset = 0;
-        private int progressStep = 100;
-        private int largeProgressStep = 10_000;
-        private int bufferSize = 8 * 1024;
+        private final int startOffset = 0;
+        private final int progressStep = 100;
+        private final int largeProgressStep = 10_000;
+        private final int bufferSize = 8 * 1024;
         private String downloadType = "all";
         private final Set<String> selectedSourceIds = new LinkedHashSet<>();
         private boolean useProxy;
@@ -264,36 +136,9 @@ public final class TileDownloadConfig {
             return this;
         }
 
-        public Builder startOffset(int value) {
-            this.startOffset = value;
-            return this;
-        }
-
-        public Builder progressStep(int value) {
-            this.progressStep = value;
-            return this;
-        }
-
-        public Builder largeProgressStep(int value) {
-            this.largeProgressStep = value;
-            return this;
-        }
-
-        public Builder bufferSize(int value) {
-            this.bufferSize = value;
-            return this;
-        }
 
         public Builder downloadType(String value) {
             this.downloadType = value == null ? "all" : value.trim();
-            return this;
-        }
-
-        public Builder selectedSources(Set<String> ids) {
-            this.selectedSourceIds.clear();
-            if (ids != null) {
-                this.selectedSourceIds.addAll(ids);
-            }
             return this;
         }
 

@@ -34,60 +34,61 @@ public final class TileDownloader {
     private static Path BASE_DIRECTORY = Paths.get("D:\\temp");
 
     // 经纬度范围（西→东 / 南→北）
-    private static double START_LON = 117;
-    private static double START_LAT = 38;
-    private static double END_LON = 118;
-    private static double END_LAT = 39;
+    private static double START_LON;
+    private static double START_LAT;
+    private static double END_LON;
+    private static double END_LAT;
 
     // 缩放层级与并发控制
-    private static int MIN_ZOOM = 0;
-    private static int MAX_ZOOM = 12;
-    private static int THREADS = 16;
-    private static int START = 0;
+    private static int MIN_ZOOM;
+    private static int MAX_ZOOM;
+    private static int THREADS;
+    private static int START;
 
     // 日志输出与缓冲设置
-    private static int PROGRESS_STEP = 100;        // 正常进度日志的输出频率（成功下载多少瓦片时记录一次）
-    private static int LARGE_PROGRESS_STEP = 10_000; // 执行大批量下载时的兜底输出频率，确保偶尔有日志刷出
-    private static int BUFFER_SIZE = 8 * 1024;     // HTTP 响应流的读写缓冲区大小（字节）
+    private static int PROGRESS_STEP;        // 正常进度日志的输出频率（成功下载多少瓦片时记录一次）
+    private static int LARGE_PROGRESS_STEP; // 执行大批量下载时的兜底输出频率，确保偶尔有日志刷出
+    private static int BUFFER_SIZE;     // HTTP 响应流的读写缓冲区大小（字节）
 
     // 默认启用的瓦片源分组（可改为 osm、gaode、google 等）
-    private static String DOWNLOAD_TYPE = "all";
+    private static String DOWNLOAD_TYPE;
 
     // 常见服务的子域轮询配置
-    private static final String[] GAODE_SUBDOMAINS = new String[] {"webst01", "webst02", "webst03", "webst04"};
-    private static final String[] GOOGLE_SUBDOMAINS = new String[] {"mt0", "mt1", "mt2", "mt3"};
-    private static final String[] OSM_FR_HOT_SUBDOMAINS = new String[] {"a", "b", "c"};
-    private static final String[] CYCLOSM_SUBDOMAINS = new String[] {"a", "b", "c"};
+    private static final String[] GAODE_SUBDOMAINS = new String[]{"webst01", "webst02", "webst03", "webst04"};
+    private static final String[] GOOGLE_SUBDOMAINS = new String[]{"mt0", "mt1", "mt2", "mt3"};
+    private static final String[] OSM_FR_HOT_SUBDOMAINS = new String[]{"a", "b", "c"};
+    private static final String[] CYCLOSM_SUBDOMAINS = new String[]{"a", "b", "c"};
 
     private static TileSource[] TILE_SOURCES = buildTileSources();
 
     private static Set<String> ALL_SOURCE_IDS = collectSourceIds(TILE_SOURCES);
     private static Map<String, Set<String>> DOWNLOAD_TYPE_PRESETS = createDownloadTypes();
     private static final Set<String> DISABLED_SOURCES = ConcurrentHashMap.newKeySet();
+
     private TileDownloader() {
         throw new IllegalStateException("Utility class");
     }
 
     private static TileSource[] buildTileSources() {
-        return new TileSource[] {
-            new TileSource("osm-standard", "openstreet 标准", "https://tile.openstreetmap.org/", "osm-standard", "ZXY"),
-            osmHotSource(),
-            cycloSmSource(),
-            new TileSource("arcgis-topo", "ArcGIS 地形", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/", "arcgis-topo", "ZYX"),
-            new TileSource("arcgis-imagery", "ArcGIS 卫星", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/", "arcgis-imagery", "ZYX"),
-            new TileSource("seamap-base", "基础海图", "https://t2.openseamap.org/tile/", "seamap-base", "ZXY"),
-            new TileSource("seamap-seamark", "海图航标", "https://tiles.openseamap.org/seamark/", "seamap-seamark", "ZXY"),
-            gaodeSource("gaode-satellite", "高德-卫星", "6", "gaode-satellite", ".jpg"),
-            gaodeSource("gaode-hybrid", "高德-混合", "7", "gaode-hybrid", ".png"),
-            gaodeSource("gaode-roadnet", "高德-路网", "8", "gaode-roadnet", ".png"),
-            gaodeSource("gaode-light", "高德-浅1", "9", "gaode-light", ".png"),
-            gaodeSource("gaode-light-poi", "高德-浅2", "10", "gaode-light-poi", ".png"),
-            googleSource("google-vector", "谷歌-矢量图", "m", "google-vector", ".png"),
-            googleSource("google-satellite", "谷歌-卫星图", "s", "google-satellite", ".jpg"),
-            googleSource("google-hybrid", "谷歌-卫星+标注", "y", "google-hybrid", ".jpg"),
-            googleSource("google-terrain", "谷歌-地形图", "t", "google-terrain", ".png"),
-            googleSource("google-terrain-labels", "谷歌-地形+标注", "p", "google-terrain-labels", ".png"),
-            googleSource("google-roads", "谷歌-路网", "h", "google-roads", ".png")
+        return new TileSource[]{
+                new TileSource("osm-standard", "openstreet 标准", "https://tile.openstreetmap.org/", "osm-standard", "ZXY"),
+                osmHotSource(),
+                cycloSmSource(),
+                new TileSource("arcgis-topo", "ArcGIS 地形", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/", "arcgis-topo", "ZYX"),
+                new TileSource("arcgis-imagery", "ArcGIS 卫星", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/", "arcgis-imagery", "ZYX"),
+                new TileSource("seamap-base", "基础海图", "https://t2.openseamap.org/tile/", "seamap-base", "ZXY"),
+                new TileSource("seamap-seamark", "海图航标", "https://tiles.openseamap.org/seamark/", "seamap-seamark", "ZXY"),
+                gaodeSource("gaode-satellite", "高德-卫星", "6", "gaode-satellite", ".jpg"),
+                gaodeSource("gaode-hybrid", "高德-混合", "7", "gaode-hybrid", ".png"),
+                gaodeSource("gaode-roadnet", "高德-路网", "8", "gaode-roadnet", ".png"),
+                gaodeSource("gaode-light", "高德-浅1", "9", "gaode-light", ".png"),
+                gaodeSource("gaode-light-poi", "高德-浅2", "10", "gaode-light-poi", ".png"),
+                googleSource("google-vector", "谷歌-矢量图", "m", "google-vector", ".png"),
+                googleSource("google-satellite", "谷歌-卫星图", "s", "google-satellite", ".jpg"),
+                googleSource("google-hybrid", "谷歌-卫星+标注", "y", "google-hybrid", ".jpg"),
+                googleSource("google-terrain", "谷歌-地形图", "t", "google-terrain", ".png"),
+                googleSource("google-terrain-labels", "谷歌-地形+标注", "p", "google-terrain-labels", ".png"),
+                googleSource("google-roads", "谷歌-路网", "h", "google-roads", ".png")
         };
     }
 
@@ -171,8 +172,8 @@ public final class TileDownloader {
         }
 
         TileSource[] supportedSources = Arrays.stream(TILE_SOURCES)
-            .filter(TileSource::isSupported)
-            .toArray(TileSource[]::new);
+                .filter(TileSource::isSupported)
+                .toArray(TileSource[]::new);
 
         if (supportedSources.length == 0) {
             System.err.println("No supported tile service configured.");
@@ -182,16 +183,16 @@ public final class TileDownloader {
         Set<String> typeSelection = resolveDownloadType(DOWNLOAD_TYPE);
 
         TileSource[] activeSources = Arrays.stream(supportedSources)
-            .filter(source -> {
-                if (filter.enabled) {
-                    return filter.ids.contains(source.id);
-                }
-                if (typeSelection.isEmpty()) {
-                    return true;
-                }
-                return typeSelection.contains(source.id);
-            })
-            .toArray(TileSource[]::new);
+                .filter(source -> {
+                    if (filter.enabled) {
+                        return filter.ids.contains(source.id);
+                    }
+                    if (typeSelection.isEmpty()) {
+                        return true;
+                    }
+                    return typeSelection.contains(source.id);
+                })
+                .toArray(TileSource[]::new);
 
         if (activeSources.length == 0) {
             if (filter.enabled) {
@@ -423,28 +424,28 @@ public final class TileDownloader {
     private static TileSource osmHotSource() {
         String template = "https://tile-{s}.openstreetmap.fr/hot/{z}/{x}/{y}.png";
         return new TileSource(
-            "osm-hot",
-            "openstreet 人道要素",
-            "https://tile.openstreetmap.fr/hot/",
-            "osm-hot",
-            "ZXY",
-            template,
-            OSM_FR_HOT_SUBDOMAINS,
-            ".png"
+                "osm-hot",
+                "openstreet 人道要素",
+                "https://tile.openstreetmap.fr/hot/",
+                "osm-hot",
+                "ZXY",
+                template,
+                OSM_FR_HOT_SUBDOMAINS,
+                ".png"
         );
     }
 
     private static TileSource cycloSmSource() {
         String template = "https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png";
         return new TileSource(
-            "cyclosm",
-            "openstreet 地形",
-            "https://tile-cyclosm.openstreetmap.fr/cyclosm/",
-            "cyclosm",
-            "ZXY",
-            template,
-            CYCLOSM_SUBDOMAINS,
-            ".png"
+                "cyclosm",
+                "openstreet 地形",
+                "https://tile-cyclosm.openstreetmap.fr/cyclosm/",
+                "cyclosm",
+                "ZXY",
+                template,
+                CYCLOSM_SUBDOMAINS,
+                ".png"
         );
     }
 
@@ -452,14 +453,14 @@ public final class TileDownloader {
     private static TileSource gaodeSource(String id, String name, String styleCode, String folderName, String fileExtension) {
         String template = "https://{s}.is.autonavi.com/appmaptile?style=" + styleCode + "&x={x}&y={y}&z={z}";
         return new TileSource(
-            id,
-            name,
-            "https://webst01.is.autonavi.com/appmaptile",
-            folderName,
-            "ZXY",
-            template,
-            GAODE_SUBDOMAINS,
-            fileExtension
+                id,
+                name,
+                "https://webst01.is.autonavi.com/appmaptile",
+                folderName,
+                "ZXY",
+                template,
+                GAODE_SUBDOMAINS,
+                fileExtension
         );
     }
 
@@ -467,14 +468,14 @@ public final class TileDownloader {
     private static TileSource googleSource(String id, String name, String layerCode, String folderName, String fileExtension) {
         String template = "https://{s}.google.com/vt/lyrs=" + layerCode + "&x={x}&y={y}&z={z}";
         return new TileSource(
-            id,
-            name,
-            "https://mt0.google.com/vt",
-            folderName,
-            "ZXY",
-            template,
-            GOOGLE_SUBDOMAINS,
-            fileExtension
+                id,
+                name,
+                "https://mt0.google.com/vt",
+                folderName,
+                "ZXY",
+                template,
+                GOOGLE_SUBDOMAINS,
+                fileExtension
         );
     }
 
@@ -630,9 +631,9 @@ public final class TileDownloader {
 
         try (InputStream in = connection.getInputStream();
              OutputStream out = Files.newOutputStream(
-                 tilePath,
-                 StandardOpenOption.CREATE,
-                 StandardOpenOption.TRUNCATE_EXISTING)) {
+                     tilePath,
+                     StandardOpenOption.CREATE,
+                     StandardOpenOption.TRUNCATE_EXISTING)) {
             byte[] buffer = new byte[BUFFER_SIZE];
             int bytesRead;
             while ((bytesRead = in.read(buffer)) != -1) {
@@ -647,9 +648,9 @@ public final class TileDownloader {
 
     private static Path buildTilePath(TileSource source, int zoom, int x, int y) {
         return source.directory
-            .resolve(String.valueOf(zoom))
-            .resolve(String.valueOf(x))
-            .resolve(source.fileNameForTile(y));
+                .resolve(String.valueOf(zoom))
+                .resolve(String.valueOf(x))
+                .resolve(source.fileNameForTile(y));
     }
 
     private static int lonToTileX(double lon, int zoom) {
@@ -674,16 +675,7 @@ public final class TileDownloader {
         return normalized;
     }
 
-    private static final class SourceFilter {
-        private final boolean enabled;
-        private final Set<String> ids;
-        private final Set<String> unknownIds;
-
-        private SourceFilter(boolean enabled, Set<String> ids, Set<String> unknownIds) {
-            this.enabled = enabled;
-            this.ids = ids;
-            this.unknownIds = unknownIds;
-        }
+    private record SourceFilter(boolean enabled, Set<String> ids, Set<String> unknownIds) {
 
         private static SourceFilter all() {
             return new SourceFilter(false, new LinkedHashSet<>(), new LinkedHashSet<>());
@@ -738,9 +730,9 @@ public final class TileDownloader {
                 result = result.replace("{s}", nextSubdomain());
             }
             return result
-                .replace("{z}", Integer.toString(zoom))
-                .replace("{x}", Integer.toString(x))
-                .replace("{y}", Integer.toString(y));
+                    .replace("{z}", Integer.toString(zoom))
+                    .replace("{x}", Integer.toString(x))
+                    .replace("{y}", Integer.toString(y));
         }
 
         private String fileNameForTile(int y) {
