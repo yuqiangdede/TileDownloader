@@ -46,9 +46,9 @@ public final class TileDownloader {
     private static int START = 0;
 
     // 日志输出与缓冲设置
-    private static int PROGRESS_STEP = 100;
-    private static int LARGE_PROGRESS_STEP = 10_000;
-    private static int BUFFER_SIZE = 8 * 1024;
+    private static int PROGRESS_STEP = 100;        // 正常进度日志的输出频率（成功下载多少瓦片时记录一次）
+    private static int LARGE_PROGRESS_STEP = 10_000; // 执行大批量下载时的兜底输出频率，确保偶尔有日志刷出
+    private static int BUFFER_SIZE = 8 * 1024;     // HTTP 响应流的读写缓冲区大小（字节）
 
     // 默认启用的瓦片源分组（可改为 osm、gaode、google 等）
     private static String DOWNLOAD_TYPE = "all";
