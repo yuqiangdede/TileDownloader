@@ -7,12 +7,13 @@ import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
-import java.awt.GridLayout;
 import java.awt.Insets;
 import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
@@ -42,11 +43,16 @@ import javax.swing.JTextField;
 import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
+import javax.swing.ToolTipManager;
 import javax.swing.UIManager;
 import javax.swing.UnsupportedLookAndFeelException;
 import javax.swing.border.TitledBorder;
 
 public final class TileDownloaderUI {
+
+    private static final String PREVIEW_BASE_PATH = "/previews/";
+    private static final String[] PREVIEW_TEXT_EXTENSIONS = {".html", ".htm", ".md", ".txt"};
+    private static final String[] PREVIEW_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif"};
 
     private TileDownloaderUI() {
     }
@@ -60,6 +66,10 @@ public final class TileDownloaderUI {
     }
 
     private static void createAndShow() {
+        ToolTipManager toolTipManager = ToolTipManager.sharedInstance();
+        toolTipManager.setInitialDelay(200);
+        toolTipManager.setDismissDelay(Math.max(toolTipManager.getDismissDelay(), 15_000));
+
         TileDownloadConfig defaults = TileDownloadConfig.defaults();
 
         JFrame frame = new JFrame("瓦片下载器");
@@ -120,6 +130,7 @@ public final class TileDownloaderUI {
         addRow(settingsPanel, gbc, "纬度范围", rangePanel(minLatField, maxLatField));
         Map<String, String> sourceDisplayNames = TileDownloader.getSourceDisplayNames();
         List<SourceEntry> sourceEntries = new ArrayList<>();
+        Map<String, SourcePreview> previewCache = new LinkedHashMap<>();
         LinkedHashMap<String, List<SourceEntry>> groupedSources = new LinkedHashMap<>();
         // Normalise display names so related sources (e.g. multiple Gaode flavours) share the same row.
         Map<String, String> groupOverrides = Map.of(
@@ -160,6 +171,10 @@ public final class TileDownloaderUI {
             groupName = override;
             JCheckBox box = new JCheckBox(itemLabel, false);
             SourceEntry entryRecord = new SourceEntry(entry.getKey(), displayName, box);
+            SourcePreview preview = previewCache.computeIfAbsent(entry.getKey(), TileDownloaderUI::loadPreview);
+            if (preview != null) {
+                box.setToolTipText(preview.tooltipHtml(entryRecord.name()));
+            }
             sourceEntries.add(entryRecord);
             groupedSources.computeIfAbsent(groupName, key -> new ArrayList<>()).add(entryRecord);
         }
@@ -380,7 +395,9 @@ public final class TileDownloaderUI {
             throw new IllegalArgumentException(label + "必须介于 " + minAllowed + " 与 " + maxAllowed + " 之间。");
         }
         return value;
-    }    private static void launchDownload(TileDownloadConfig config,
+    }
+
+    private static void launchDownload(TileDownloadConfig config,
                                        JButton startButton,
                                        JProgressBar progressBar,
                                        JTextArea logArea) {
@@ -429,6 +446,62 @@ public final class TileDownloaderUI {
             logArea.append(System.lineSeparator());
             logArea.setCaretPosition(logArea.getDocument().getLength());
         });
+    }
+
+    private static SourcePreview loadPreview(String sourceId) {
+        if (sourceId == null || sourceId.isBlank()) {
+            return null;
+        }
+        URL imageUrl = null;
+        for (String extension : PREVIEW_IMAGE_EXTENSIONS) {
+            imageUrl = TileDownloaderUI.class.getResource(PREVIEW_BASE_PATH + sourceId + extension);
+            if (imageUrl == null) {
+                imageUrl = TileDownloaderUI.class.getResource("/" + sourceId + extension);
+            }
+            if (imageUrl != null) {
+                break;
+            }
+        }
+        String description = null;
+        boolean descriptionIsHtml = false;
+        for (String extension : PREVIEW_TEXT_EXTENSIONS) {
+            String resourcePath = PREVIEW_BASE_PATH + sourceId + extension;
+            try (InputStream stream = TileDownloaderUI.class.getResourceAsStream(resourcePath)) {
+                if (stream == null) {
+                    continue;
+                }
+                description = new String(stream.readAllBytes(), StandardCharsets.UTF_8).trim();
+                descriptionIsHtml = ".html".equalsIgnoreCase(extension) || ".htm".equalsIgnoreCase(extension);
+                break;
+            } catch (IOException ex) {
+                System.err.println("读取地图源预览文件失败：" + resourcePath + "，原因：" + ex.getMessage());
+            }
+        }
+        if ((description == null || description.isBlank()) && imageUrl == null) {
+            return null;
+        }
+        return new SourcePreview(description, descriptionIsHtml, imageUrl);
+    }
+
+    private static String escapeHtml(String value) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+        return value
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;");
+    }
+
+    private static String toHtmlLines(String value) {
+        if (value == null || value.isEmpty()) {
+            return "";
+        }
+        return escapeHtml(value)
+            .replace("\r\n", "<br>")
+            .replace("\r", "<br>")
+            .replace("\n", "<br>");
     }
 
     private static void addRow(JPanel panel, GridBagConstraints gbc, String labelText, Component component) {
@@ -498,5 +571,35 @@ public final class TileDownloaderUI {
     }
 
     private record SourceEntry(String id, String name, JCheckBox checkBox) {
+    }
+
+    private record SourcePreview(String description, boolean descriptionIsHtml, URL imageUrl) {
+        private String tooltipHtml(String title) {
+            StringBuilder html = new StringBuilder("<html><body>");
+            boolean hasContent = false;
+            if (title != null && !title.isBlank()) {
+                html.append("<b>").append(escapeHtml(title)).append("</b>");
+                hasContent = true;
+            }
+            if (description != null && !description.isBlank()) {
+                if (hasContent) {
+                    html.append("<br>");
+                }
+                if (descriptionIsHtml) {
+                    html.append(description);
+                } else {
+                    html.append(toHtmlLines(description));
+                }
+                hasContent = true;
+            }
+            if (imageUrl != null) {
+                if (hasContent) {
+                    html.append("<br>");
+                }
+                html.append("<img src=\"").append(imageUrl.toExternalForm()).append("\" width=\"260\"/>");
+            }
+            html.append("</body></html>");
+            return html.toString();
+        }
     }
 }
