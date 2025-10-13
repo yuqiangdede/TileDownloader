@@ -3,7 +3,7 @@ target/
 !**/src/main/**/target/
 !**/src/test/**/target/
 .kotlin
-
+*repository/
 ### IntelliJ IDEA ###
 .idea/
 
