@@ -1,2 +1,2 @@
-描述 高德的矢量混合路网图层，底色较浅，字比较多
+描述 高德的矢量混合路网图层，底色较浅，字比较多，公司内网可用。
 示例url https://webst03.is.autonavi.com/appmaptile?style=9&x=13666&y=6744&z=14

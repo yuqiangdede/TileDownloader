@@ -1,2 +1,2 @@
-描述 高德的纯路网瓦片图层，配合卫星图使用
+描述 高德的纯路网瓦片图层，配合卫星图使用，公司内网可用。
 示例url https://webst03.is.autonavi.com/appmaptile?style=8&x=13666&y=6744&z=14

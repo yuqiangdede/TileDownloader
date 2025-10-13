@@ -1,2 +1,2 @@
-OpenStreetMap 标准样式提供全球志愿者绘制的道路、地名与土地利用信息，适合通用的浏览与定位需求。
+OpenStreetMap 标准样式提供全球志愿者绘制的道路、地名与土地利用信息，适合通用的浏览与定位需求。得挂梯子
 示例url https://tile.openstreetmap.org/14/13658/6744.png

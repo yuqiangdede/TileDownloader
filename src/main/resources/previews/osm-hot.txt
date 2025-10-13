@@ -1,2 +1,2 @@
-OSM Humanitarian 样式突出道路通行、临时设施与灾害响应相关要素，是应急救援与人道援助常用底图。
+OSM Humanitarian 样式突出道路通行、临时设施与灾害响应相关要素，是应急救援与人道援助常用底图。公司内网可用。
 示例url https://tile-b.openstreetmap.fr/hot/12/3416/1685.png
