@@ -117,7 +117,7 @@ public final class TileDownloaderUI {
         minZoomSpinner.setValue(0);
         maxZoomSpinner.setValue(13);
         addRow(settingsPanel, gbc, "缩放级别", rangePanel(minZoomSpinner, maxZoomSpinner));
-        JSpinner threadSpinner = new JSpinner(new SpinnerNumberModel(defaults.getThreads(), 1, 64, 1));
+        JSpinner threadSpinner = new JSpinner(new SpinnerNumberModel(defaults.getThreads(), 1, 1024, 1));
         addRow(settingsPanel, gbc, "线程数", threadSpinner);
         JCheckBox proxyCheckBox = new JCheckBox("启用 SOCKS 代理");
         addRow(settingsPanel, gbc, "", proxyCheckBox);

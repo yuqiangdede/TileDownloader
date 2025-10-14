@@ -94,7 +94,7 @@ public final class TileDownloadConfig {
         private double endLat = 39;
         private int minZoom = 0;
         private int maxZoom = 12;
-        private int threads = 16;
+        private int threads = 64;
         private final int startOffset = 0;
         private final int progressStep = 100;
         private final int largeProgressStep = 10_000;
