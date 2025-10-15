@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
@@ -137,12 +138,20 @@ public final class TileDownloaderUI {
         proxyPanel.add(new JLabel("端口"));
         proxyPanel.add(proxyPortSpinner);
         addRow(settingsPanel, gbc, "", proxyPanel);
-        JTextField minLonField = new JTextField(String.format("%.5f", defaults.getStartLon()), 10);
-        JTextField maxLonField = new JTextField(String.format("%.5f", defaults.getEndLon()), 10);
-        addRow(settingsPanel, gbc, "经度范围", rangePanel(minLonField, maxLonField));
-        JTextField minLatField = new JTextField(String.format("%.5f", defaults.getStartLat()), 10);
-        JTextField maxLatField = new JTextField(String.format("%.5f", defaults.getEndLat()), 10);
-        addRow(settingsPanel, gbc, "纬度范围", rangePanel(minLatField, maxLatField));
+        String defaultBounds = String.format(Locale.ROOT, "%.5f %.5f, %.5f %.5f",
+            defaults.getStartLat(),
+            defaults.getStartLon(),
+            defaults.getEndLat(),
+            defaults.getEndLon());
+        JTextArea boundsTextArea = new JTextArea(defaultBounds, 4, 26);
+        boundsTextArea.setLineWrap(true);
+        boundsTextArea.setWrapStyleWord(true);
+        boundsTextArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
+        boundsTextArea.setMargin(new Insets(4, 4, 4, 4));
+        boundsTextArea.setToolTipText("每行格式：纬度 经度,纬度 经度（支持多行输入）");
+        JScrollPane boundsScrollPane = new JScrollPane(boundsTextArea);
+        boundsScrollPane.setPreferredSize(new Dimension(10, 90));
+        addRow(settingsPanel, gbc, "经纬度范围", boundsScrollPane);
         Map<String, String> sourceDisplayNames = TileDownloader.getSourceDisplayNames();
         List<SourceEntry> sourceEntries = new ArrayList<>();
         Map<String, Optional<SourcePreview>> previewCache = new LinkedHashMap<>();
@@ -315,12 +324,9 @@ public final class TileDownloaderUI {
         startButton.addActionListener(e -> {
             try {
                 LinkedHashSet<String> selectedIds = collectSelectedIds(sourceEntries);
-                TileDownloadConfig config = buildConfig(
+                List<TileDownloadConfig> configs = buildConfigs(
                     directoryField.getText(),
-                    minLonField.getText(),
-                    maxLonField.getText(),
-                    minLatField.getText(),
-                    maxLatField.getText(),
+                    boundsTextArea.getText(),
                     (int) minZoomSpinner.getValue(),
                     (int) maxZoomSpinner.getValue(),
                     (int) threadSpinner.getValue(),
@@ -328,7 +334,7 @@ public final class TileDownloaderUI {
                     proxyCheckBox.isSelected(),
                     proxyHostField.getText(),
                     (int) proxyPortSpinner.getValue());
-                launchDownload(config, startButton, progressBar, logArea);
+                launchDownload(configs, startButton, progressBar, logArea);
             } catch (IllegalArgumentException ex) {
                 JOptionPane.showMessageDialog(frame, ex.getMessage(), "输入错误", JOptionPane.ERROR_MESSAGE);
             }
@@ -357,33 +363,20 @@ public final class TileDownloaderUI {
     }
 
     // Validate the form input and translate it into a TileDownloadConfig used by the downloader.
-    private static TileDownloadConfig buildConfig(String directoryText,
-                                                  String minLonText,
-                                                  String maxLonText,
-                                                  String minLatText,
-                                                  String maxLatText,
-                                                  int minZoom,
-                                                  int maxZoom,
-                                                  int threads,
-                                                  Set<String> selectedIds,
-                                                  boolean useProxy,
-                                                  String proxyHostText,
-                                                  int proxyPortValue) {
+    private static List<TileDownloadConfig> buildConfigs(String directoryText,
+                                                         String boundsText,
+                                                         int minZoom,
+                                                         int maxZoom,
+                                                         int threads,
+                                                         Set<String> selectedIds,
+                                                         boolean useProxy,
+                                                         String proxyHostText,
+                                                         int proxyPortValue) {
         if (minZoom > maxZoom) {
             throw new IllegalArgumentException("最小缩放级别不能大于最大缩放级别。");
         }
         if (selectedIds == null || selectedIds.isEmpty()) {
             throw new IllegalArgumentException("请至少选择一个地图源。");
-        }
-        double minLon = parseCoordinate("最小经度", minLonText, -180.0, 180.0);
-        double maxLon = parseCoordinate("最大经度", maxLonText, -180.0, 180.0);
-        double minLat = parseCoordinate("最小纬度", minLatText, -90.0, 90.0);
-        double maxLat = parseCoordinate("最大纬度", maxLatText, -90.0, 90.0);
-        if (minLon >= maxLon) {
-            throw new IllegalArgumentException("最小经度必须小于最大经度。");
-        }
-        if (minLat >= maxLat) {
-            throw new IllegalArgumentException("最小纬度必须小于最大纬度。");
         }
         Path directory;
         try {
@@ -391,6 +384,7 @@ public final class TileDownloaderUI {
         } catch (InvalidPathException ex) {
             throw new IllegalArgumentException("输出目录无效。");
         }
+        List<CoordinateBounds> boundsList = parseBounds(boundsText);
         String trimmedProxyHost = proxyHostText == null ? "" : proxyHostText.trim();
         int proxyPort = Math.max(0, proxyPortValue);
         if (useProxy) {
@@ -401,18 +395,73 @@ public final class TileDownloaderUI {
                 throw new IllegalArgumentException("代理端口必须大于零。");
             }
         }
-        TileDownloadConfig config = TileDownloadConfig.builder()
-            .baseDirectory(directory)
-            .longitudeRange(minLon, maxLon)
-            .latitudeRange(minLat, maxLat)
-            .zoomRange(minZoom, maxZoom)
-            .threads(threads)
-            .downloadType("all")
-            .proxy(useProxy, trimmedProxyHost, proxyPort)
-            .build();
-        config.setSelectedSourceIds(selectedIds);
-        config.setUseExplicitSources(true);
-        return config;
+        List<TileDownloadConfig> configs = new ArrayList<>(boundsList.size());
+        for (CoordinateBounds bounds : boundsList) {
+            TileDownloadConfig config = TileDownloadConfig.builder()
+                .baseDirectory(directory)
+                .longitudeRange(bounds.minLon(), bounds.maxLon())
+                .latitudeRange(bounds.minLat(), bounds.maxLat())
+                .zoomRange(minZoom, maxZoom)
+                .threads(threads)
+                .downloadType("all")
+                .proxy(useProxy, trimmedProxyHost, proxyPort)
+                .build();
+            config.setSelectedSourceIds(selectedIds);
+            config.setUseExplicitSources(true);
+            configs.add(config);
+        }
+        return configs;
+    }
+
+    private static List<CoordinateBounds> parseBounds(String text) {
+        String trimmedInput = text == null ? "" : text.trim();
+        if (trimmedInput.isEmpty()) {
+            throw new IllegalArgumentException("经纬度范围不能为空。");
+        }
+        String[] rows = trimmedInput.split("\\R");
+        List<CoordinateBounds> bounds = new ArrayList<>();
+        for (int i = 0; i < rows.length; i++) {
+            String row = rows[i].trim();
+            if (row.isEmpty()) {
+                continue;
+            }
+            row = row.replace('，', ',');
+            String[] parts = row.split("\\s*,\\s*");
+            if (parts.length != 2) {
+                throw new IllegalArgumentException("第 " + (i + 1) + " 行格式无效：应为“纬度 经度,纬度 经度”。");
+            }
+            double[] first = parseLatLon(parts[0], i + 1, 1);
+            double[] second = parseLatLon(parts[1], i + 1, 2);
+            double minLat = Math.min(first[0], second[0]);
+            double maxLat = Math.max(first[0], second[0]);
+            double minLon = Math.min(first[1], second[1]);
+            double maxLon = Math.max(first[1], second[1]);
+            if (Double.compare(minLon, maxLon) >= 0) {
+                throw new IllegalArgumentException("第 " + (i + 1) + " 行经度范围无效：最小经度必须小于最大经度。");
+            }
+            if (Double.compare(minLat, maxLat) >= 0) {
+                throw new IllegalArgumentException("第 " + (i + 1) + " 行纬度范围无效：最小纬度必须小于最大纬度。");
+            }
+            bounds.add(new CoordinateBounds(minLat, maxLat, minLon, maxLon));
+        }
+        if (bounds.isEmpty()) {
+            throw new IllegalArgumentException("经纬度范围不能为空。");
+        }
+        return bounds;
+    }
+
+    private static double[] parseLatLon(String token, int lineNumber, int pairIndex) {
+        String trimmed = token == null ? "" : token.trim();
+        if (trimmed.isEmpty()) {
+            throw new IllegalArgumentException("第 " + lineNumber + " 行缺少第 " + pairIndex + " 个坐标。");
+        }
+        String[] parts = trimmed.split("\\s+");
+        if (parts.length != 2) {
+            throw new IllegalArgumentException("第 " + lineNumber + " 行第 " + pairIndex + " 个坐标格式无效：应为“纬度 经度”。");
+        }
+        double latitude = parseCoordinate("第 " + lineNumber + " 行第 " + pairIndex + " 个坐标的纬度", parts[0], -90.0, 90.0);
+        double longitude = parseCoordinate("第 " + lineNumber + " 行第 " + pairIndex + " 个坐标的经度", parts[1], -180.0, 180.0);
+        return new double[]{latitude, longitude};
     }
 
     // Reusable parser that validates numeric text fields and enforces allowed ranges.
@@ -433,10 +482,13 @@ public final class TileDownloaderUI {
         return value;
     }
 
-    private static void launchDownload(TileDownloadConfig config,
+    private static void launchDownload(List<TileDownloadConfig> configs,
                                        JButton startButton,
                                        JProgressBar progressBar,
                                        JTextArea logArea) {
+        if (configs == null || configs.isEmpty()) {
+            return;
+        }
         startButton.setEnabled(false);
         progressBar.setIndeterminate(true);
         progressBar.setString("正在下载...");
@@ -446,20 +498,46 @@ public final class TileDownloaderUI {
             protected Void doInBackground() {
                 PrintStream originalOut = System.out;
                 PrintStream originalErr = System.err;
-                try {
-                    Files.createDirectories(config.getBaseDirectory());
-                } catch (IOException ex) {
-                    appendLog(logArea, "创建目录失败：" + ex.getMessage());
-                    return null;
-                }
                 try (TextAreaOutputStream taos = new TextAreaOutputStream(logArea);
                      PrintStream redirect = new PrintStream(taos, true, StandardCharsets.UTF_8)) {
                     System.setOut(redirect);
                     System.setErr(redirect);
-                    TileDownloader.run(config);
-                } catch (InterruptedException ex) {
-                    Thread.currentThread().interrupt();
-                    appendLog(logArea, "下载已中断。");
+                    int total = configs.size();
+                    boolean completedAll = true;
+                    for (int i = 0; i < total; i++) {
+                        TileDownloadConfig config = configs.get(i);
+                        appendLog(logArea, String.format(
+                            Locale.ROOT,
+                            "处理第 %d/%d 个范围：%.5f %.5f, %.5f %.5f",
+                            i + 1,
+                            total,
+                            config.getStartLat(),
+                            config.getStartLon(),
+                            config.getEndLat(),
+                            config.getEndLon()));
+                        try {
+                            Files.createDirectories(config.getBaseDirectory());
+                        } catch (IOException ex) {
+                            appendLog(logArea, "创建目录失败：" + ex.getMessage());
+                            completedAll = false;
+                            break;
+                        }
+                        try {
+                            TileDownloader.run(config);
+                        } catch (InterruptedException ex) {
+                            Thread.currentThread().interrupt();
+                            appendLog(logArea, "下载已中断。");
+                            completedAll = false;
+                            break;
+                        } catch (RuntimeException ex) {
+                            appendLog(logArea, "下载失败：" + ex.getMessage());
+                            completedAll = false;
+                            break;
+                        }
+                    }
+                    if (completedAll) {
+                        appendLog(logArea, "全部范围处理完成。");
+                    }
                 } finally {
                     System.setOut(originalOut);
                     System.setErr(originalErr);
@@ -733,6 +811,9 @@ public final class TileDownloaderUI {
             html.append("</body></html>");
             return html.toString();
         }
+    }
+
+    private record CoordinateBounds(double minLat, double maxLat, double minLon, double maxLon) {
     }
 
     private record SourceEntry(String id, String name, JCheckBox checkBox, SourcePreview preview) {
