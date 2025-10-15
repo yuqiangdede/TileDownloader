@@ -182,8 +182,7 @@ public final class TileDownloaderUI {
                     itemLabel = displayName;
                 }
             }
-            String override = groupOverrides.getOrDefault(groupName, groupName);
-            groupName = override;
+            groupName = groupOverrides.getOrDefault(groupName, groupName);
             JCheckBox box = new JCheckBox(itemLabel, false);
             Optional<SourcePreview> cachedPreview = previewCache.get(entry.getKey());
             if (cachedPreview == null) {
@@ -545,7 +544,7 @@ public final class TileDownloaderUI {
         }
         String escaped = escapeHtml(value);
         Matcher matcher = URL_PATTERN.matcher(escaped);
-        StringBuffer buffer = new StringBuffer();
+        StringBuilder buffer = new StringBuilder();
         while (matcher.find()) {
             String url = matcher.group(1);
             matcher.appendReplacement(buffer, "<a href=\"" + url + "\">" + url + "</a>");
@@ -605,7 +604,7 @@ public final class TileDownloaderUI {
             if (buffer.size() == 0 && !appendNewLine) {
                 return;
             }
-            String text = new String(buffer.toByteArray(), StandardCharsets.UTF_8);
+            String text = buffer.toString(StandardCharsets.UTF_8);
             buffer.reset();
             if (appendNewLine) {
                 text += System.lineSeparator();
