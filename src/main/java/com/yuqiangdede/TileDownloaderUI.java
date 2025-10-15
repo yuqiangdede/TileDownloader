@@ -100,12 +100,15 @@ public final class TileDownloaderUI {
         gbc.insets = new Insets(4, 4, 4, 4);
         gbc.anchor = GridBagConstraints.WEST;
         gbc.fill = GridBagConstraints.HORIZONTAL;
+
+
         JTextField directoryField = new JTextField(defaults.getBaseDirectory().toString(), 25);
         JButton browseButton = new JButton("浏览...");
         JPanel dirPanel = new JPanel(new BorderLayout(5, 0));
         dirPanel.add(directoryField, BorderLayout.CENTER);
         dirPanel.add(browseButton, BorderLayout.EAST);
         addRow(settingsPanel, gbc, "输出目录", dirPanel);
+
         browseButton.addActionListener(e -> {
             JFileChooser chooser = new JFileChooser(directoryField.getText().trim());
             chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
@@ -138,7 +141,7 @@ public final class TileDownloaderUI {
         proxyPanel.add(new JLabel("端口"));
         proxyPanel.add(proxyPortSpinner);
         addRow(settingsPanel, gbc, "", proxyPanel);
-        String defaultBounds = String.format(Locale.ROOT, "%.5f %.5f, %.5f %.5f",
+        String defaultBounds = String.format(Locale.ROOT, "%.2f %.2f, %.2f %.2f",
             defaults.getStartLat(),
             defaults.getStartLon(),
             defaults.getEndLat(),
@@ -150,7 +153,15 @@ public final class TileDownloaderUI {
         boundsTextArea.setMargin(new Insets(4, 4, 4, 4));
         boundsTextArea.setToolTipText("每行格式：纬度 经度,纬度 经度（支持多行输入）");
         JScrollPane boundsScrollPane = new JScrollPane(boundsTextArea);
-        boundsScrollPane.setPreferredSize(new Dimension(10, 90));
+        Dimension boundsViewportSize = boundsTextArea.getPreferredScrollableViewportSize();
+        Insets boundsInsets = boundsTextArea.getInsets();
+        int lineHeight = boundsTextArea.getFontMetrics(boundsTextArea.getFont()).getHeight();
+        int fixedHeight = Math.max(boundsViewportSize.height, lineHeight * 4 + boundsInsets.top + boundsInsets.bottom);
+        Dimension fixedSize = new Dimension(boundsViewportSize.width, fixedHeight);
+        boundsScrollPane.setPreferredSize(fixedSize);
+        boundsScrollPane.setMinimumSize(fixedSize);
+        boundsScrollPane.setMaximumSize(new Dimension(Integer.MAX_VALUE, fixedHeight));
+
         addRow(settingsPanel, gbc, "经纬度范围", boundsScrollPane);
         Map<String, String> sourceDisplayNames = TileDownloader.getSourceDisplayNames();
         List<SourceEntry> sourceEntries = new ArrayList<>();
@@ -339,7 +350,7 @@ public final class TileDownloaderUI {
                 JOptionPane.showMessageDialog(frame, ex.getMessage(), "输入错误", JOptionPane.ERROR_MESSAGE);
             }
         });
-        frame.setSize(960, 640);
+        frame.setSize(1200, 800);
         frame.setLocationRelativeTo(null);
         frame.setVisible(true);
     }
