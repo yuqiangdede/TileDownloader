@@ -109,7 +109,7 @@ public final class TileDownloaderUI {
         dirPanel.add(browseButton, BorderLayout.EAST);
         addRow(settingsPanel, gbc, "输出目录", dirPanel);
 
-        browseButton.addActionListener(e -> {
+        browseButton.addActionListener(_ -> {
             JFileChooser chooser = new JFileChooser(directoryField.getText().trim());
             chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
             if (chooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
@@ -213,7 +213,7 @@ public final class TileDownloaderUI {
             SourcePreview preview = cachedPreview.orElse(null);
             SourceEntry entryRecord = new SourceEntry(entry.getKey(), displayName, box, preview);
             sourceEntries.add(entryRecord);
-            groupedSources.computeIfAbsent(groupName, key -> new ArrayList<>()).add(entryRecord);
+            groupedSources.computeIfAbsent(groupName, _ -> new ArrayList<>()).add(entryRecord);
         }
         JPanel sourcePanel = new JPanel();
         sourcePanel.setLayout(new BoxLayout(sourcePanel, BoxLayout.Y_AXIS));
@@ -265,7 +265,7 @@ public final class TileDownloaderUI {
         leftPanel.add(settingsPanel, BorderLayout.NORTH);
         leftPanel.add(sourceScroll, BorderLayout.CENTER);
         leftPanel.add(sourceButtons, BorderLayout.SOUTH);
-        proxyCheckBox.addActionListener(e -> {
+        proxyCheckBox.addActionListener(_ -> {
             boolean enabled = proxyCheckBox.isSelected();
             proxyHostField.setEnabled(enabled);
             proxyPortSpinner.setEnabled(enabled);
@@ -303,7 +303,7 @@ public final class TileDownloaderUI {
         buttonsPanel.add(startButton);
         bottomPanel.add(buttonsPanel, BorderLayout.EAST);
         frame.add(bottomPanel, BorderLayout.SOUTH);
-        clearLogButton.addActionListener(e -> logArea.setText(""));
+        clearLogButton.addActionListener(_ -> logArea.setText(""));
         Runnable updateSourceSelection = () -> {
             LinkedHashSet<String> selectedIds = collectSelectedIds(sourceEntries);
             boolean hasSelection = !selectedIds.isEmpty();
@@ -311,7 +311,7 @@ public final class TileDownloaderUI {
         };
         for (SourceEntry entry : sourceEntries) {
             JCheckBox box = entry.checkBox();
-            box.addActionListener(e -> updateSourceSelection.run());
+            box.addActionListener(_ -> updateSourceSelection.run());
             box.addMouseListener(new MouseAdapter() {
                 @Override
                 public void mouseEntered(MouseEvent e) {
@@ -323,16 +323,16 @@ public final class TileDownloaderUI {
                 }
             });
         }
-        selectAllButton.addActionListener(e -> {
+        selectAllButton.addActionListener(_ -> {
             sourceEntries.forEach(entry -> entry.checkBox().setSelected(true));
             updateSourceSelection.run();
         });
-        deselectAllButton.addActionListener(e -> {
+        deselectAllButton.addActionListener(_ -> {
             sourceEntries.forEach(entry -> entry.checkBox().setSelected(false));
             updateSourceSelection.run();
         });
         updateSourceSelection.run();
-        startButton.addActionListener(e -> {
+        startButton.addActionListener(_ -> {
             try {
                 LinkedHashSet<String> selectedIds = collectSelectedIds(sourceEntries);
                 List<TileDownloadConfig> configs = buildConfigs(
@@ -721,7 +721,7 @@ public final class TileDownloaderUI {
             this.container = container;
             this.layout = layout;
             this.previewPanel = previewPanel;
-            this.hideTimer = new Timer(200, e -> this.layout.show(this.container, "log"));
+            this.hideTimer = new Timer(200, _ -> this.layout.show(this.container, "log"));
             this.hideTimer.setRepeats(false);
         }
 
