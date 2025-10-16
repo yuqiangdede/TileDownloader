@@ -121,7 +121,7 @@ public final class TileDownloaderUI {
         minZoomSpinner.setValue(0);
         maxZoomSpinner.setValue(13);
         addRow(settingsPanel, gbc, "缩放级别", rangePanel(minZoomSpinner, maxZoomSpinner));
-        JSpinner threadSpinner = new JSpinner(new SpinnerNumberModel(defaults.getThreads(), 1, 1024, 1));
+        JSpinner threadSpinner = new JSpinner(new SpinnerNumberModel(defaults.getThreads(), 1, 8192, 1));
         addRow(settingsPanel, gbc, "线程数", threadSpinner);
         JCheckBox proxyCheckBox = new JCheckBox("启用 SOCKS 代理");
         addRow(settingsPanel, gbc, "", proxyCheckBox);
@@ -130,7 +130,7 @@ public final class TileDownloaderUI {
             defaultProxyHost = "127.0.0.1";
         }
         JTextField proxyHostField = new JTextField(defaultProxyHost, 12);
-        int defaultProxyPort = defaults.getProxyPort() > 0 ? defaults.getProxyPort() : 7739;
+        int defaultProxyPort = defaults.getProxyPort() > 0 ? defaults.getProxyPort() : 1080;
         JSpinner proxyPortSpinner = new JSpinner(new SpinnerNumberModel(defaultProxyPort, 0, 65535, 1));
         proxyCheckBox.setSelected(defaults.isUseProxy());
         proxyHostField.setEnabled(defaults.isUseProxy());
@@ -659,7 +659,7 @@ public final class TileDownloaderUI {
     }
 
     // Redirects System.out/System.err into the Swing text area while keeping writes thread-safe.
-    private static final class TextAreaOutputStream extends OutputStream implements AutoCloseable {
+    private static final class TextAreaOutputStream extends OutputStream {
         private final JTextArea textArea;
         private final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         private volatile boolean closed;

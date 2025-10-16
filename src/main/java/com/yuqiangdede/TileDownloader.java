@@ -5,6 +5,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.InterruptedIOException;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.URI;
 import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.nio.file.Files;
@@ -642,7 +644,8 @@ public final class TileDownloader {
 
         Files.createDirectories(tilePath.getParent());
 
-        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        URL resolvedUrl = toSafeUrl(url);
+        HttpURLConnection connection = (HttpURLConnection) resolvedUrl.openConnection();
         connection.setRequestMethod("GET");
         connection.setConnectTimeout(10_000);
         connection.setReadTimeout(20_000);
@@ -668,6 +671,14 @@ public final class TileDownloader {
         }
 
         return tilePath.toAbsolutePath().toString();
+    }
+
+    private static URL toSafeUrl(String url) throws IOException {
+        try {
+            return URI.create(url).toURL();
+        } catch (IllegalArgumentException | MalformedURLException e) {
+            throw new IOException("Invalid URL: " + url, e);
+        }
     }
 
     private static Path buildTilePath(TileSource source, int zoom, int x, int y) {
