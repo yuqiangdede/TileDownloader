@@ -22,6 +22,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -211,7 +212,10 @@ public final class TileDownloader {
             System.out.printf("Download type '%s' sources: %s%n", DOWNLOAD_TYPE, formatSourceIds(activeSources));
         }
 
-        ExecutorService executor = Executors.newFixedThreadPool(THREADS);
+        ExecutorService executor = Executors.newThreadPerTaskExecutor(
+                Thread.ofVirtual().name("tile-downloader-", 0).factory()
+        );
+        Semaphore concurrencyLimiter = new Semaphore(Math.max(1, THREADS));
         AtomicInteger completedTiles = new AtomicInteger(0);
         int tilesPerSource = calculateTotalTiles();
         int totalTiles = tilesPerSource * activeSources.length;
@@ -228,7 +232,8 @@ public final class TileDownloader {
                         final int tileZoom = zoom;
                         final int tileX = x;
                         final int tileY = y;
-                        executor.submit(() -> processTile(source, completedTiles, totalTiles, tileZoom, tileX, tileY));
+                        submitWithLimiter(executor, concurrencyLimiter,
+                                () -> processTile(source, completedTiles, totalTiles, tileZoom, tileX, tileY));
                     }
                 }
             }
@@ -236,6 +241,25 @@ public final class TileDownloader {
 
         executor.shutdown();
         executor.awaitTermination(Long.MAX_VALUE, TimeUnit.MILLISECONDS);
+    }
+
+    private static void submitWithLimiter(ExecutorService executor,
+                                          Semaphore limiter,
+                                          Runnable task) {
+        executor.submit(() -> {
+            boolean acquired = false;
+            try {
+                limiter.acquire();
+                acquired = true;
+                task.run();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                if (acquired) {
+                    limiter.release();
+                }
+            }
+        });
     }
 
     private static void processTile(TileSource source,
