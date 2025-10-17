@@ -26,6 +26,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -67,6 +68,8 @@ public final class TileDownloader {
     private static Set<String> ALL_SOURCE_IDS = collectSourceIds(TILE_SOURCES);
     private static Map<String, Set<String>> DOWNLOAD_TYPE_PRESETS = createDownloadTypes();
     private static final Set<String> DISABLED_SOURCES = ConcurrentHashMap.newKeySet();
+    private static final AtomicBoolean CANCEL_REQUESTED = new AtomicBoolean(false);
+    private static volatile ExecutorService CURRENT_EXECUTOR;
 
     private TileDownloader() {
         throw new IllegalStateException("Utility class");
@@ -154,6 +157,7 @@ public final class TileDownloader {
             System.err.printf("Unknown tile source ids: %s%n", String.join(", ", filter.unknownIds));
         }
 
+        CANCEL_REQUESTED.set(false);
         execute(filter);
     }
 
@@ -163,7 +167,16 @@ public final class TileDownloader {
         if (!filter.unknownIds.isEmpty()) {
             System.err.printf("Unknown tile source ids: %s%n", String.join(", ", filter.unknownIds));
         }
+        CANCEL_REQUESTED.set(false);
         execute(filter);
+    }
+
+    public static void cancelCurrent() {
+        CANCEL_REQUESTED.set(true);
+        ExecutorService executor = CURRENT_EXECUTOR;
+        if (executor != null) {
+            executor.shutdownNow();
+        }
     }
 
     private static void execute(SourceFilter filter) throws InterruptedException {
@@ -217,42 +230,67 @@ public final class TileDownloader {
         ExecutorService executor = Executors.newThreadPerTaskExecutor(
                 Thread.ofVirtual().name("tile-downloader-", 0).factory()
         );
+        CURRENT_EXECUTOR = executor;
         Semaphore concurrencyLimiter = new Semaphore(Math.max(1, THREADS));
         AtomicInteger completedTiles = new AtomicInteger(0);
         int tilesPerSource = calculateTotalTiles();
         int totalTiles = tilesPerSource * activeSources.length;
 
-        for (TileSource source : activeSources) {
-            for (int zoom = MIN_ZOOM; zoom <= MAX_ZOOM; zoom++) {
-                int xMin = Math.min(lonToTileX(START_LON, zoom), lonToTileX(END_LON, zoom));
-                int xMax = Math.max(lonToTileX(START_LON, zoom), lonToTileX(END_LON, zoom));
-                int yMin = Math.min(latToTileY(START_LAT, zoom), latToTileY(END_LAT, zoom));
-                int yMax = Math.max(latToTileY(START_LAT, zoom), latToTileY(END_LAT, zoom));
+        try {
+            outer:
+            for (TileSource source : activeSources) {
+                if (shouldStop()) {
+                    break;
+                }
+                for (int zoom = MIN_ZOOM; zoom <= MAX_ZOOM; zoom++) {
+                    if (shouldStop()) {
+                        break outer;
+                    }
+                    int xMin = Math.min(lonToTileX(START_LON, zoom), lonToTileX(END_LON, zoom));
+                    int xMax = Math.max(lonToTileX(START_LON, zoom), lonToTileX(END_LON, zoom));
+                    int yMin = Math.min(latToTileY(START_LAT, zoom), latToTileY(END_LAT, zoom));
+                    int yMax = Math.max(latToTileY(START_LAT, zoom), latToTileY(END_LAT, zoom));
 
-                for (int x = xMin; x <= xMax; x++) {
-                    for (int y = yMin; y <= yMax; y++) {
-                        final int tileZoom = zoom;
-                        final int tileX = x;
-                        final int tileY = y;
-                        submitWithLimiter(executor, concurrencyLimiter,
-                                () -> processTile(source, completedTiles, totalTiles, tileZoom, tileX, tileY));
+                    for (int x = xMin; x <= xMax; x++) {
+                        if (shouldStop()) {
+                            break outer;
+                        }
+                        for (int y = yMin; y <= yMax; y++) {
+                            if (shouldStop()) {
+                                break outer;
+                            }
+                            final int tileZoom = zoom;
+                            final int tileX = x;
+                            final int tileY = y;
+                            submitWithLimiter(executor, concurrencyLimiter,
+                                    () -> processTile(source, completedTiles, totalTiles, tileZoom, tileX, tileY));
+                        }
                     }
                 }
             }
-        }
 
-        executor.shutdown();
-        executor.awaitTermination(Long.MAX_VALUE, TimeUnit.MILLISECONDS);
+            executor.shutdown();
+            executor.awaitTermination(Long.MAX_VALUE, TimeUnit.MILLISECONDS);
+        } finally {
+            CURRENT_EXECUTOR = null;
+            CANCEL_REQUESTED.set(false);
+        }
     }
 
     private static void submitWithLimiter(ExecutorService executor,
                                           Semaphore limiter,
                                           Runnable task) {
+        if (shouldStop()) {
+            return;
+        }
         executor.submit(() -> {
             boolean acquired = false;
             try {
                 limiter.acquire();
                 acquired = true;
+                if (shouldStop()) {
+                    return;
+                }
                 task.run();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -264,6 +302,10 @@ public final class TileDownloader {
         });
     }
 
+    private static boolean shouldStop() {
+        return CANCEL_REQUESTED.get() || Thread.currentThread().isInterrupted();
+    }
+
     private static void processTile(TileSource source,
                                     AtomicInteger completedTiles,
                                     int totalTiles,
@@ -271,6 +313,9 @@ public final class TileDownloader {
                                     int x,
                                     int y) {
         if (DISABLED_SOURCES.contains(source.id)) {
+            return;
+        }
+        if (shouldStop()) {
             return;
         }
         String url = buildTileUrl(source, zoom, x, y);
@@ -295,6 +340,10 @@ public final class TileDownloader {
                 System.out.printf("[%s] Completed %d/%d tiles, last file: %s%n", source.name, completed, totalTiles, displayPath);
             }
         } catch (IOException e) {
+            if (e instanceof InterruptedIOException || shouldStop()) {
+                Thread.currentThread().interrupt();
+                return;
+            }
             if (isTimeoutException(e)) {
                 disableSource(source, e);
             } else {
@@ -638,6 +687,10 @@ public final class TileDownloader {
     private static String downloadTile(TileSource source, String url, int zoom, int x, int y) throws IOException {
         Path tilePath = buildTilePath(source, zoom, x, y);
 
+        if (shouldStop()) {
+            throw new InterruptedIOException("cancelled");
+        }
+
         if (Files.exists(tilePath) && Files.size(tilePath) > 0) {
             return null;
         }
@@ -658,12 +711,15 @@ public final class TileDownloader {
 
         try (InputStream in = connection.getInputStream();
              OutputStream out = Files.newOutputStream(
-                     tilePath,
-                     StandardOpenOption.CREATE,
-                     StandardOpenOption.TRUNCATE_EXISTING)) {
+                    tilePath,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.TRUNCATE_EXISTING)) {
             byte[] buffer = new byte[BUFFER_SIZE];
             int bytesRead;
             while ((bytesRead = in.read(buffer)) != -1) {
+                if (shouldStop()) {
+                    throw new InterruptedIOException("cancelled");
+                }
                 out.write(buffer, 0, bytesRead);
             }
         } finally {

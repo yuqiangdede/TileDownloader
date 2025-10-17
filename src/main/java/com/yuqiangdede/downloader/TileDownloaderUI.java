@@ -69,6 +69,7 @@ public final class TileDownloaderUI {
     private static final String[] PREVIEW_TEXT_EXTENSIONS = {".html", ".htm", ".md", ".txt"};
     private static final String[] PREVIEW_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif"};
     private static final Pattern URL_PATTERN = Pattern.compile("(https?://[^\\s<>\"]+)");
+    private static volatile SwingWorker<?, ?> activeWorker;
 
     private TileDownloaderUI() {
     }
@@ -297,17 +298,24 @@ public final class TileDownloaderUI {
         progressBar.setString("准备就绪");
         bottomPanel.add(progressBar, BorderLayout.CENTER);
         JButton clearLogButton = new JButton("清空日志");
+        JButton stopButton = new JButton("停止下载");
+        stopButton.setEnabled(false);
         JButton startButton = new JButton("开始下载");
         JPanel buttonsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         buttonsPanel.add(clearLogButton);
+        buttonsPanel.add(stopButton);
         buttonsPanel.add(startButton);
         bottomPanel.add(buttonsPanel, BorderLayout.EAST);
         frame.add(bottomPanel, BorderLayout.SOUTH);
         clearLogButton.addActionListener(e -> logArea.setText(""));
+        stopButton.addActionListener(e -> requestStop(stopButton, logArea));
         Runnable updateSourceSelection = () -> {
             LinkedHashSet<String> selectedIds = collectSelectedIds(sourceEntries);
             boolean hasSelection = !selectedIds.isEmpty();
-            startButton.setEnabled(hasSelection);
+            SwingWorker<?, ?> worker = activeWorker;
+            boolean running = worker != null && !worker.isDone();
+            startButton.setEnabled(hasSelection && !running);
+            stopButton.setEnabled(running);
         };
         for (SourceEntry entry : sourceEntries) {
             JCheckBox box = entry.checkBox();
@@ -345,7 +353,7 @@ public final class TileDownloaderUI {
                     proxyCheckBox.isSelected(),
                     proxyHostField.getText(),
                     (int) proxyPortSpinner.getValue());
-                launchDownload(configs, startButton, progressBar, logArea);
+                launchDownload(configs, startButton, stopButton, progressBar, logArea, updateSourceSelection);
             } catch (IllegalArgumentException ex) {
                 JOptionPane.showMessageDialog(frame, ex.getMessage(), "输入错误", JOptionPane.ERROR_MESSAGE);
             }
@@ -580,12 +588,23 @@ public final class TileDownloaderUI {
 
     private static void launchDownload(List<TileDownloadConfig> configs,
                                        JButton startButton,
+                                       JButton stopButton,
                                        JProgressBar progressBar,
-                                       JTextArea logArea) {
+                                       JTextArea logArea,
+                                       Runnable updateSourceSelection) {
         if (configs == null || configs.isEmpty()) {
+            updateSourceSelection.run();
             return;
         }
-        startButton.setEnabled(false);
+        SwingWorker<?, ?> existing = activeWorker;
+        if (existing != null) {
+            if (existing.isDone()) {
+                activeWorker = null;
+            } else {
+                appendLog(logArea, "已有下载任务正在运行，请先停止当前任务。");
+                return;
+            }
+        }
         progressBar.setIndeterminate(true);
         progressBar.setString("正在下载...");
         appendLog(logArea, "开始下载...");
@@ -601,6 +620,10 @@ public final class TileDownloaderUI {
                     int total = configs.size();
                     boolean completedAll = true;
                     for (int i = 0; i < total; i++) {
+                        if (isCancelled()) {
+                            completedAll = false;
+                            break;
+                        }
                         TileDownloadConfig config = configs.get(i);
                         appendLog(logArea, String.format(
                             Locale.ROOT,
@@ -622,7 +645,7 @@ public final class TileDownloaderUI {
                             TileDownloader.run(config);
                         } catch (InterruptedException ex) {
                             Thread.currentThread().interrupt();
-                            appendLog(logArea, "下载已中断。");
+                            appendLog(logArea, "下载被中断。");
                             completedAll = false;
                             break;
                         } catch (RuntimeException ex) {
@@ -632,7 +655,7 @@ public final class TileDownloaderUI {
                         }
                     }
                     if (completedAll) {
-                        appendLog(logArea, "全部范围处理完成。");
+                        appendLog(logArea, "全部范围下载完成。");
                     }
                 } finally {
                     System.setOut(originalOut);
@@ -643,11 +666,29 @@ public final class TileDownloaderUI {
             @Override
             protected void done() {
                 progressBar.setIndeterminate(false);
-                progressBar.setString("已完成");
-                startButton.setEnabled(true);
+                boolean cancelled = isCancelled();
+                progressBar.setString(cancelled ? "已停止" : "已完成");
+                if (cancelled) {
+                    appendLog(logArea, "下载已停止。");
+                }
+                activeWorker = null;
+                stopButton.setEnabled(false);
+                updateSourceSelection.run();
             }
         };
+        activeWorker = worker;
+        updateSourceSelection.run();
         worker.execute();
+    }
+
+    private static void requestStop(JButton stopButton, JTextArea logArea) {
+        stopButton.setEnabled(false);
+        appendLog(logArea, "收到停止指令，正在尝试中断下载...");
+        TileDownloader.cancelCurrent();
+        SwingWorker<?, ?> worker = activeWorker;
+        if (worker != null) {
+            worker.cancel(true);
+        }
     }
 
     private static void appendLog(JTextArea logArea, String message) {
@@ -960,3 +1001,4 @@ public final class TileDownloaderUI {
         }
     }
 }
+
