@@ -7,6 +7,7 @@ Tile Downloader 是一款帮助开发者和地图爱好者批量下载瓦片地�
 - 同时兼容 ZXY（OpenStreetMap 系）与 ZYX（ArcGIS 系）两种 URL 模板。
 - 支持命令行/GUI 双模式，所见即所得配置下载任务。
 - 支持 SOCKS 代理、断点续传及已存在瓦片跳过策略。
+- 附带 MapApp Web 工具，Ctrl+拖拽即可框选经纬度范围并复制参数。
 - 线程池并行下载，实时输出进度与失败重试信息。
 - 可通过配置文件或命令行参数快速扩展新的地图源。
 
@@ -42,6 +43,15 @@ Tile Downloader 是一款帮助开发者和地图爱好者批量下载瓦片地�
    java -cp target/MapDownloader-1.0-SNAPSHOT.jar com.yuqiangdede.downloader.TileDownloaderUI
    ```
    GUI 模式可通过表单填写经纬度、缩放级别以及需要的地图源，并实时查看预估的瓦片数量与下载进度。
+
+4. **经纬度框选（MapApp Web 工具）**
+   ```powershell
+   java -cp target/MapDownloader-1.0-SNAPSHOT.jar com.yuqiangdede.web.MapApp
+   ```
+   - Spring Boot 服务启动后会自动打开 `http://localhost:8080`。
+   - 在地图上按住 `Ctrl` + 鼠标左键拖拽框选区域，松开后立即显示 `minLat/minLng/maxLat/maxLng`，并自动复制到剪贴板。
+   - 可直接将输出粘贴到命令行或 GUI 表单中，快速完成目标范围配置。
+   - 若依赖未打包到 `target/`，也可以执行 `mvn spring-boot:run -Dspring-boot.run.main-class=com.yuqiangdede.web.MapApp` 启动。
 
 ## 支持的地图源
 命令行中可通过 `--sources` 选择所需来源，GUI 中可复选所需条目。
