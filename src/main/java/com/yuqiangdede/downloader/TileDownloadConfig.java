@@ -1,4 +1,4 @@
-package com.yuqiangdede;
+package com.yuqiangdede.downloader;
 
 import lombok.Getter;
 import lombok.Setter;

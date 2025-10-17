@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-cn">
+<head>
+    <meta charset="utf-8"/>
+    <title>框选复制经纬度（Ctrl+左键）</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1"/>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <style>
+        html, body, #map { height:100%; margin:0; }
+        .hud {
+          position:fixed; top:12px; left:12px; z-index:1000;
+          background:#fff; padding:8px 10px; border-radius:10px;
+          box-shadow:0 2px 10px rgba(0,0,0,.15); font:12px/1.4 ui-monospace,monospace;
+          max-width: 90vw;
+        }
+        .hud code { user-select:all; }
+        .hint { opacity:.7; }
+    </style>
+</head>
+<body>
+<div id="map"></div>
+<div class="hud">
+    <div>按住 <b>Ctrl</b> + 左键拖拽绘制矩形。松开即复制经纬度到剪贴板。</div>
+    <div class="hint">框选仅用于取值，不改变当前视图</div>
+    <div id="bbox"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    // 初始化地图
+    const map = L.map('map', { zoomControl: true });
+
+    // 高德瓦片
+    const gaodeUrl = 'https://{s}.is.autonavi.com/appmaptile?style=7&x={x}&y={y}&z={z}';
+    const sub = ['webst01','webst02','webst03','webst04'];
+    L.tileLayer(gaodeUrl, {
+      subdomains: sub, minZoom: 3, maxZoom: 18, attribution: '&copy; AutoNavi'
+    }).addTo(map);
+
+    // 初始视图
+    map.setView([31.2304, 121.4737], 12);
+
+    // Use Ctrl + drag for Leaflet box zoom
+    map.boxZoom.disable();
+
+    map.boxZoom._onMouseDown = function (e) {
+      if (!e.ctrlKey || ((e.which !== 1) && (e.button !== 1))) {
+        return false;
+      }
+
+      this._clearDeferredResetState();
+      this._resetState();
+
+      L.DomUtil.disableTextSelection();
+      L.DomUtil.disableImageDrag();
+
+      this._startPoint = this._map.mouseEventToContainerPoint(e);
+
+      L.DomEvent.on(document, {
+        contextmenu: L.DomEvent.stop,
+        mousemove: this._onMouseMove,
+        mouseup: this._onMouseUp,
+        keydown: this._onKeyDown
+      }, this);
+    };
+
+    map.boxZoom.enable();
+
+    const syncDragging = (enable) => {
+      const dragging = map.dragging;
+      if (enable && !dragging.enabled()) dragging.enable();
+      if (!enable && dragging.enabled()) dragging.disable();
+    };
+
+    let ctrlPressed = false;
+
+    const updateDragState = () => syncDragging(!ctrlPressed);
+
+    const setCtrlState = (isDown) => {
+      if (ctrlPressed === isDown) return;
+      ctrlPressed = isDown;
+      updateDragState();
+    };
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Control') setCtrlState(true);
+    });
+
+    document.addEventListener('keyup', (e) => {
+      if (e.key === 'Control') setCtrlState(false);
+    });
+
+    map.on('mousedown', (e) => {
+      if (e.originalEvent.ctrlKey) setCtrlState(true);
+    });
+
+    map.on('boxzoomend boxzoomcancel', () => {
+      if (!ctrlPressed) updateDragState();
+    });
+
+    window.addEventListener('blur', () => setCtrlState(false));
+
+    // ��¼��ѡǰ��ͼ����ֹ�Զ�����
+    let prevView = null;
+    map.on('boxzoomstart', () => {
+      prevView = { center: map.getCenter(), zoom: map.getZoom() };
+    });
+
+    map.on('boxzoomend', (e) => {
+      if (prevView) {
+        map.setView(prevView.center, prevView.zoom, { animate: false });
+        prevView = null;
+      }
+      const b = e.boxZoomBounds; // LatLngBounds
+      const minLat = b.getSouth().toFixed(6);
+      const minLng = b.getWest().toFixed(6);
+      const maxLat = b.getNorth().toFixed(6);
+      const maxLng = b.getEast().toFixed(6);
+      const txt = `minLat=${minLat}, minLng=${minLng}, maxLat=${maxLat}, maxLng=${maxLng}`;
+      document.getElementById('bbox').innerHTML =
+        `<div><b>BBox</b>: <code>${txt}</code></div>`;
+      navigator.clipboard?.writeText(txt).catch(()=>{});
+    });
+
+    // —— 若直连瓦片出现 403/跨域 —— 改为使用后端反代：
+    // L.tileLayer('/tiles?style=7&x={x}&y={y}&z={z}&s=webst02',
+    //   {minZoom:3, maxZoom:18, attribution:'&copy; AutoNavi'}).addTo(map);
+</script>
+</body>
+</html>

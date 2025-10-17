@@ -24,13 +24,13 @@ Tile Downloader 是一个用于批量下载在线地图瓦片的 Java 工具。�
 
 2. **运行（命令行）**
    ```powershell
-   java -cp target/MapDownloader-1.0-SNAPSHOT.jar com.yuqiangdede.TileDownloader
+   java -cp target/MapDownloader-1.0-SNAPSHOT.jar com.yuqiangdede.downloader.TileDownloader
    ```
    所有已配置的地图源将下载至 `BASE_DIRECTORY` 指定的目录（默认 `D:\temp`）。
 
 3. **运行（桌面 UI）**
    ```powershell
-   java -cp target/MapDownloader-1.0-SNAPSHOT.jar com.yuqiangdede.TileDownloaderUI
+   java -cp target/MapDownloader-1.0-SNAPSHOT.jar com.yuqiangdede.downloader.TileDownloaderUI
    ```
    在图形界面中选择地图源、手动输入经纬度边界；右侧的选择列表会同步显示预览信息。
 

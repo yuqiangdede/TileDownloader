@@ -1,4 +1,4 @@
-package com.yuqiangdede;
+package com.yuqiangdede.downloader;
 
 import java.awt.BorderLayout;
 import java.awt.CardLayout;
@@ -109,7 +109,7 @@ public final class TileDownloaderUI {
         dirPanel.add(browseButton, BorderLayout.EAST);
         addRow(settingsPanel, gbc, "输出目录", dirPanel);
 
-        browseButton.addActionListener(_ -> {
+        browseButton.addActionListener(e -> {
             JFileChooser chooser = new JFileChooser(directoryField.getText().trim());
             chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
             if (chooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
@@ -151,7 +151,7 @@ public final class TileDownloaderUI {
         boundsTextArea.setWrapStyleWord(true);
         boundsTextArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
         boundsTextArea.setMargin(new Insets(4, 4, 4, 4));
-        boundsTextArea.setToolTipText("每行格式：纬度 经度,纬度 经度（支持多行输入）");
+        boundsTextArea.setToolTipText("每行格式：纬度 经度,纬度 经度 或 minLat=..., minLng=..., maxLat=..., maxLng=...（支持多行输入）");
         JScrollPane boundsScrollPane = new JScrollPane(boundsTextArea);
         Dimension boundsViewportSize = boundsTextArea.getPreferredScrollableViewportSize();
         Insets boundsInsets = boundsTextArea.getInsets();
@@ -213,7 +213,7 @@ public final class TileDownloaderUI {
             SourcePreview preview = cachedPreview.orElse(null);
             SourceEntry entryRecord = new SourceEntry(entry.getKey(), displayName, box, preview);
             sourceEntries.add(entryRecord);
-            groupedSources.computeIfAbsent(groupName, _ -> new ArrayList<>()).add(entryRecord);
+            groupedSources.computeIfAbsent(groupName, e -> new ArrayList<>()).add(entryRecord);
         }
         JPanel sourcePanel = new JPanel();
         sourcePanel.setLayout(new BoxLayout(sourcePanel, BoxLayout.Y_AXIS));
@@ -265,7 +265,7 @@ public final class TileDownloaderUI {
         leftPanel.add(settingsPanel, BorderLayout.NORTH);
         leftPanel.add(sourceScroll, BorderLayout.CENTER);
         leftPanel.add(sourceButtons, BorderLayout.SOUTH);
-        proxyCheckBox.addActionListener(_ -> {
+        proxyCheckBox.addActionListener(e -> {
             boolean enabled = proxyCheckBox.isSelected();
             proxyHostField.setEnabled(enabled);
             proxyPortSpinner.setEnabled(enabled);
@@ -303,7 +303,7 @@ public final class TileDownloaderUI {
         buttonsPanel.add(startButton);
         bottomPanel.add(buttonsPanel, BorderLayout.EAST);
         frame.add(bottomPanel, BorderLayout.SOUTH);
-        clearLogButton.addActionListener(_ -> logArea.setText(""));
+        clearLogButton.addActionListener(e -> logArea.setText(""));
         Runnable updateSourceSelection = () -> {
             LinkedHashSet<String> selectedIds = collectSelectedIds(sourceEntries);
             boolean hasSelection = !selectedIds.isEmpty();
@@ -311,7 +311,7 @@ public final class TileDownloaderUI {
         };
         for (SourceEntry entry : sourceEntries) {
             JCheckBox box = entry.checkBox();
-            box.addActionListener(_ -> updateSourceSelection.run());
+            box.addActionListener(e -> updateSourceSelection.run());
             box.addMouseListener(new MouseAdapter() {
                 @Override
                 public void mouseEntered(MouseEvent e) {
@@ -323,16 +323,16 @@ public final class TileDownloaderUI {
                 }
             });
         }
-        selectAllButton.addActionListener(_ -> {
+        selectAllButton.addActionListener(e -> {
             sourceEntries.forEach(entry -> entry.checkBox().setSelected(true));
             updateSourceSelection.run();
         });
-        deselectAllButton.addActionListener(_ -> {
+        deselectAllButton.addActionListener(e -> {
             sourceEntries.forEach(entry -> entry.checkBox().setSelected(false));
             updateSourceSelection.run();
         });
         updateSourceSelection.run();
-        startButton.addActionListener(_ -> {
+        startButton.addActionListener(e -> {
             try {
                 LinkedHashSet<String> selectedIds = collectSelectedIds(sourceEntries);
                 List<TileDownloadConfig> configs = buildConfigs(
@@ -437,9 +437,13 @@ public final class TileDownloaderUI {
                 continue;
             }
             row = row.replace('，', ',');
+            if (row.indexOf('=') >= 0) {
+                bounds.add(parseKeyValueBounds(row, i + 1));
+                continue;
+            }
             String[] parts = row.split("\\s*,\\s*");
             if (parts.length != 2) {
-                throw new IllegalArgumentException("第 " + (i + 1) + " 行格式无效：应为“纬度 经度,纬度 经度”。");
+                throw new IllegalArgumentException("第 " + (i + 1) + " 行格式无效：应为“纬度 经度,纬度 经度”或“minLat=..., minLng=..., maxLat=..., maxLng=...”。");
             }
             double[] first = parseLatLon(parts[0], i + 1, 1);
             double[] second = parseLatLon(parts[1], i + 1, 2);
@@ -459,6 +463,87 @@ public final class TileDownloaderUI {
             throw new IllegalArgumentException("经纬度范围不能为空。");
         }
         return bounds;
+    }
+
+    private static CoordinateBounds parseKeyValueBounds(String row, int lineNumber) {
+        String[] assignments = row.split("\\s*,\\s*");
+        Map<String, Double> values = new LinkedHashMap<>();
+        for (String assignment : assignments) {
+            if (assignment.isEmpty()) {
+                continue;
+            }
+            String[] kv = assignment.split("\\s*=\\s*", 2);
+            if (kv.length != 2) {
+                throw new IllegalArgumentException("第 " + lineNumber + " 行格式无效：键值对需使用“=”分隔，例如 minLat=31.5。");
+            }
+            String key = kv[0].trim();
+            String valueText = kv[1].trim();
+            if (key.isEmpty()) {
+                throw new IllegalArgumentException("第 " + lineNumber + " 行存在缺少键的键值对。");
+            }
+            if (valueText.isEmpty()) {
+                throw new IllegalArgumentException("第 " + lineNumber + " 行的 " + key + " 缺少数值。");
+            }
+            String normalizedKey = key.toLowerCase(Locale.ROOT);
+            String canonicalKey;
+            double minAllowed;
+            double maxAllowed;
+            switch (normalizedKey) {
+                case "minlat" -> {
+                    canonicalKey = "minLat";
+                    minAllowed = -90.0;
+                    maxAllowed = 90.0;
+                }
+                case "maxlat" -> {
+                    canonicalKey = "maxLat";
+                    minAllowed = -90.0;
+                    maxAllowed = 90.0;
+                }
+                case "minlon", "minlng" -> {
+                    canonicalKey = "minLon";
+                    minAllowed = -180.0;
+                    maxAllowed = 180.0;
+                }
+                case "maxlon", "maxlng" -> {
+                    canonicalKey = "maxLon";
+                    minAllowed = -180.0;
+                    maxAllowed = 180.0;
+                }
+                default -> throw new IllegalArgumentException("第 " + lineNumber + " 行包含未知键 “" + key + "”。支持的键：minLat, minLng, maxLat, maxLng。");
+            }
+            double parsedValue = parseCoordinate("第 " + lineNumber + " 行的 " + key, valueText, minAllowed, maxAllowed);
+            Double previous = values.put(canonicalKey, parsedValue);
+            if (previous != null) {
+                throw new IllegalArgumentException("第 " + lineNumber + " 行重复定义了 " + key + "。");
+            }
+        }
+        List<String> missing = new ArrayList<>();
+        if (!values.containsKey("minLat")) {
+            missing.add("minLat");
+        }
+        if (!values.containsKey("maxLat")) {
+            missing.add("maxLat");
+        }
+        if (!values.containsKey("minLon")) {
+            missing.add("minLon/minLng");
+        }
+        if (!values.containsKey("maxLon")) {
+            missing.add("maxLon/maxLng");
+        }
+        if (!missing.isEmpty()) {
+            throw new IllegalArgumentException("第 " + lineNumber + " 行缺少键：" + String.join("、", missing) + "。");
+        }
+        double minLat = values.get("minLat");
+        double maxLat = values.get("maxLat");
+        double minLon = values.get("minLon");
+        double maxLon = values.get("maxLon");
+        if (Double.compare(minLon, maxLon) >= 0) {
+            throw new IllegalArgumentException("第 " + lineNumber + " 行经度范围无效：最小经度必须小于最大经度。");
+        }
+        if (Double.compare(minLat, maxLat) >= 0) {
+            throw new IllegalArgumentException("第 " + lineNumber + " 行纬度范围无效：最小纬度必须小于最大纬度。");
+        }
+        return new CoordinateBounds(minLat, maxLat, minLon, maxLon);
     }
 
     private static double[] parseLatLon(String token, int lineNumber, int pairIndex) {
@@ -721,7 +806,7 @@ public final class TileDownloaderUI {
             this.container = container;
             this.layout = layout;
             this.previewPanel = previewPanel;
-            this.hideTimer = new Timer(200, _ -> this.layout.show(this.container, "log"));
+            this.hideTimer = new Timer(200, e -> this.layout.show(this.container, "log"));
             this.hideTimer.setRepeats(false);
         }
 

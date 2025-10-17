@@ -1,4 +1,4 @@
-package com.yuqiangdede;
+package com.yuqiangdede.downloader;
 
 import java.io.IOException;
 import java.io.InputStream;
