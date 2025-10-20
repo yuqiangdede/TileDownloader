@@ -62,6 +62,9 @@ public final class TileDownloader {
     private static final String[] GOOGLE_SUBDOMAINS = new String[]{"mt0", "mt1", "mt2", "mt3"};
     private static final String[] OSM_FR_HOT_SUBDOMAINS = new String[]{"a", "b", "c"};
     private static final String[] CYCLOSM_SUBDOMAINS = new String[]{"a", "b", "c"};
+    private static final String[] SHIPXY_SUBDOMAINS = new String[]{"1", "2", "3", "11", "12"};
+    private static final String SHIPXY_SOURCE_ID = "shipxy-nautical";
+    private static final byte[] SHIPXY_DEFAULT_TILE = loadShipxyDefaultTile();
 
     private static TileSource[] TILE_SOURCES = buildTileSources();
 
@@ -80,6 +83,7 @@ public final class TileDownloader {
                 new TileSource("osm-standard", "openstreet 标准", "https://tile.openstreetmap.org/", "osm-standard", "ZXY"),
                 osmHotSource(),
                 cycloSmSource(),
+                shipxySource(),
                 new TileSource("arcgis-topo", "ArcGIS 地形", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/", "arcgis-topo", "ZYX"),
                 new TileSource("arcgis-imagery", "ArcGIS 卫星", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/", "arcgis-imagery", "ZYX"),
                 new TileSource("seamap-base", "基础海图", "https://t2.openseamap.org/tile/", "seamap-base", "ZXY"),
@@ -233,8 +237,11 @@ public final class TileDownloader {
         CURRENT_EXECUTOR = executor;
         Semaphore concurrencyLimiter = new Semaphore(Math.max(1, THREADS));
         AtomicInteger completedTiles = new AtomicInteger(0);
-        int tilesPerSource = calculateTotalTiles();
-        int totalTiles = tilesPerSource * activeSources.length;
+        int totalTiles = Arrays.stream(activeSources).mapToInt(TileDownloader::calculateTotalTiles).sum();
+        if (totalTiles == 0) {
+            System.err.println("No tiles fall within the requested zoom range.");
+            return;
+        }
 
         try {
             outer:
@@ -242,7 +249,11 @@ public final class TileDownloader {
                 if (shouldStop()) {
                     break;
                 }
-                for (int zoom = MIN_ZOOM; zoom <= MAX_ZOOM; zoom++) {
+                int minZoomForSource = Math.max(MIN_ZOOM, source.minZoom());
+                if (minZoomForSource > MAX_ZOOM) {
+                    continue;
+                }
+                for (int zoom = minZoomForSource; zoom <= MAX_ZOOM; zoom++) {
                     if (shouldStop()) {
                         break outer;
                     }
@@ -524,6 +535,21 @@ public final class TileDownloader {
         );
     }
 
+    private static TileSource shipxySource() {
+        String template = "https://m{s}.shipxy.com/tile.c?l=Na&m=o&x={x}&y={y}&z={z}";
+        return new TileSource(
+                SHIPXY_SOURCE_ID,
+                "\u8239\u8baf",
+                "https://m1.shipxy.com/tile.c",
+                SHIPXY_SOURCE_ID,
+                "ZXY",
+                template,
+                SHIPXY_SUBDOMAINS,
+                ".png",
+                2
+        );
+    }
+
     // Gaode style codes: 6=satellite, 7=hybrid, 8=roadnet, 9=light high POI, 10=light low POI.
     private static TileSource gaodeSource(String id, String name, String styleCode, String folderName, String fileExtension) {
         String template = "https://{s}.is.autonavi.com/appmaptile?style=" + styleCode + "&x={x}&y={y}&z={z}";
@@ -569,6 +595,7 @@ public final class TileDownloader {
         registerType(types, "cyclosm", "cyclosm");
         registerType(types, "arcgis", "arcgis-topo", "arcgis-imagery");
         registerType(types, "seamap", "seamap-base", "seamap-seamark");
+        registerType(types, "shipxy", SHIPXY_SOURCE_ID);
         registerType(types, "gaode", "gaode-satellite", "gaode-hybrid", "gaode-roadnet", "gaode-light", "gaode-light-poi");
         registerType(types, "gaode-sat", "gaode-satellite");
         registerType(types, "google", "google-vector", "google-satellite", "google-hybrid", "google-terrain", "google-terrain-labels", "google-roads");
@@ -666,9 +693,13 @@ public final class TileDownloader {
         return null;
     }
 
-    private static int calculateTotalTiles() {
+    private static int calculateTotalTiles(TileSource source) {
+        int startZoom = Math.max(MIN_ZOOM, source.minZoom());
+        if (startZoom > MAX_ZOOM) {
+            return 0;
+        }
         int total = 0;
-        for (int zoom = MIN_ZOOM; zoom <= MAX_ZOOM; zoom++) {
+        for (int zoom = startZoom; zoom <= MAX_ZOOM; zoom++) {
             int xMin = Math.min(lonToTileX(START_LON, zoom), lonToTileX(END_LON, zoom));
             int xMax = Math.max(lonToTileX(START_LON, zoom), lonToTileX(END_LON, zoom));
             int yMin = Math.min(latToTileY(START_LAT, zoom), latToTileY(END_LAT, zoom));
@@ -678,6 +709,31 @@ public final class TileDownloader {
             total += tileCountX * tileCountY;
         }
         return total;
+    }
+
+    private static byte[] loadShipxyDefaultTile() {
+        try (InputStream stream = TileDownloader.class.getResourceAsStream("/default/default.png")) {
+            if (stream == null) {
+                System.err.println("Shipxy fallback tile not found under /default/default.png");
+                return new byte[0];
+            }
+            return stream.readAllBytes();
+        } catch (IOException ex) {
+            System.err.println("Failed to load Shipxy fallback tile: " + ex.getMessage());
+            return new byte[0];
+        }
+    }
+
+    private static void writeShipxyFallback(Path tilePath) throws IOException {
+        if (SHIPXY_DEFAULT_TILE.length == 0) {
+            throw new IOException("HTTP status 404 (missing Shipxy fallback tile)");
+        }
+        Files.write(
+                tilePath,
+                SHIPXY_DEFAULT_TILE,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING
+        );
     }
 
     private static String buildTileUrl(TileSource source, int zoom, int x, int y) {
@@ -704,6 +760,11 @@ public final class TileDownloader {
         connection.setReadTimeout(20_000);
 
         int statusCode = connection.getResponseCode();
+        if (statusCode == HttpURLConnection.HTTP_NOT_FOUND && SHIPXY_SOURCE_ID.equals(source.id)) {
+            connection.disconnect();
+            writeShipxyFallback(tilePath);
+            return tilePath.toAbsolutePath().toString();
+        }
         if (statusCode != HttpURLConnection.HTTP_OK) {
             connection.disconnect();
             throw new IOException("HTTP status " + statusCode);
@@ -783,16 +844,21 @@ public final class TileDownloader {
         private final String[] subdomains;
         private final AtomicInteger subdomainCounter = new AtomicInteger();
         private final String fileExtension;
+        private final int minZoom;
 
         private TileSource(String id, String name, String baseUrl, String folderName, String modeOverride) {
-            this(id, name, baseUrl, folderName, modeOverride, null, null, ".png");
+            this(id, name, baseUrl, folderName, modeOverride, null, null, ".png", 0);
         }
 
         private TileSource(String id, String name, String baseUrl, String folderName, String modeOverride, String template, String[] subdomains) {
-            this(id, name, baseUrl, folderName, modeOverride, template, subdomains, ".png");
+            this(id, name, baseUrl, folderName, modeOverride, template, subdomains, ".png", 0);
         }
 
         private TileSource(String id, String name, String baseUrl, String folderName, String modeOverride, String template, String[] subdomains, String fileExtension) {
+            this(id, name, baseUrl, folderName, modeOverride, template, subdomains, fileExtension, 0);
+        }
+
+        private TileSource(String id, String name, String baseUrl, String folderName, String modeOverride, String template, String[] subdomains, String fileExtension, int minZoom) {
             this.id = normalizeId(id);
             if (this.id.isEmpty()) {
                 throw new IllegalArgumentException("Tile source id must not be empty");
@@ -802,6 +868,7 @@ public final class TileDownloader {
             this.mode = resolveMode(baseUrl, modeOverride);
             this.fileExtension = normalizeExtension(fileExtension);
             this.subdomains = prepareSubdomains(subdomains);
+            this.minZoom = Math.max(0, minZoom);
             this.directory = BASE_DIRECTORY.resolve(resolveFolderName(baseUrl, folderName, name, this.id));
 
             if (template != null && !template.isBlank()) {
@@ -816,6 +883,9 @@ public final class TileDownloader {
             if (urlTemplate == null || urlTemplate.isEmpty()) {
                 return "";
             }
+            if (zoom < minZoom) {
+                return "";
+            }
             String result = urlTemplate;
             if (result.contains("{s}")) {
                 result = result.replace("{s}", nextSubdomain());
@@ -828,6 +898,10 @@ public final class TileDownloader {
 
         private String fileNameForTile(int y) {
             return y + fileExtension;
+        }
+
+        int minZoom() {
+            return minZoom;
         }
 
         private String nextSubdomain() {

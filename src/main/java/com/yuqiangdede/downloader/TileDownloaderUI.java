@@ -172,6 +172,7 @@ public final class TileDownloaderUI {
         Map<String, String> groupOverrides = Map.of(
             "基础海图", "海图",
             "海图航标", "海图",
+            "船讯", "海图",
             "高德-卫星", "高德",
             "高德-混合", "高德",
             "高德-路网", "高德",
