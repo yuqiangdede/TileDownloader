@@ -1,5 +1,8 @@
 package com.yuqiangdede.downloader;
 
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -28,6 +31,7 @@ import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import javax.imageio.ImageIO;
 
 /**
  * Utility to batch download map tiles for a given latitude/longitude range.
@@ -88,14 +92,14 @@ public final class TileDownloader {
                 new TileSource("arcgis-imagery", "ArcGIS 卫星", "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/", "arcgis-imagery", "ZYX"),
                 new TileSource("seamap-base", "基础海图", "https://t2.openseamap.org/tile/", "seamap-base", "ZXY"),
                 new TileSource("seamap-seamark", "海图航标", "https://tiles.openseamap.org/seamark/", "seamap-seamark", "ZXY"),
-                gaodeSource("gaode-satellite", "高德-卫星", "6", "gaode-satellite", ".jpg"),
+                gaodeSource("gaode-satellite", "高德-卫星", "6", "gaode-satellite", ".png"),
                 gaodeSource("gaode-hybrid", "高德-混合", "7", "gaode-hybrid", ".png"),
                 gaodeSource("gaode-roadnet", "高德-路网", "8", "gaode-roadnet", ".png"),
                 gaodeSource("gaode-light", "高德-浅1", "9", "gaode-light", ".png"),
                 gaodeSource("gaode-light-poi", "高德-浅2", "10", "gaode-light-poi", ".png"),
                 googleSource("google-vector", "谷歌-矢量图", "m", "google-vector", ".png"),
-                googleSource("google-satellite", "谷歌-卫星图", "s", "google-satellite", ".jpg"),
-                googleSource("google-hybrid", "谷歌-卫星+标注", "y", "google-hybrid", ".jpg"),
+                googleSource("google-satellite", "谷歌-卫星图", "s", "google-satellite", ".png"),
+                googleSource("google-hybrid", "谷歌-卫星+标注", "y", "google-hybrid", ".png"),
                 googleSource("google-terrain", "谷歌-地形图", "t", "google-terrain", ".png"),
                 googleSource("google-terrain-labels", "谷歌-地形+标注", "p", "google-terrain-labels", ".png"),
                 googleSource("google-roads", "谷歌-路网", "h", "google-roads", ".png")
@@ -770,24 +774,69 @@ public final class TileDownloader {
             throw new IOException("HTTP status " + statusCode);
         }
 
-        try (InputStream in = connection.getInputStream();
-             OutputStream out = Files.newOutputStream(
-                    tilePath,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING)) {
-            byte[] buffer = new byte[BUFFER_SIZE];
-            int bytesRead;
-            while ((bytesRead = in.read(buffer)) != -1) {
-                if (shouldStop()) {
-                    throw new InterruptedIOException("cancelled");
-                }
-                out.write(buffer, 0, bytesRead);
-            }
+        byte[] tileData;
+        try (InputStream in = connection.getInputStream()) {
+            tileData = readAllBytes(in);
         } finally {
             connection.disconnect();
         }
 
+        if (tileData.length == 0) {
+            throw new IOException("Empty tile response");
+        }
+
+        if (isJpeg(tileData)) {
+            writeJpegAsPng(tilePath, tileData);
+        } else {
+            writeRawTile(tilePath, tileData);
+        }
+
         return tilePath.toAbsolutePath().toString();
+    }
+
+    private static byte[] readAllBytes(InputStream stream) throws IOException {
+        int chunkSize = Math.max(BUFFER_SIZE, 4_096);
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream(chunkSize);
+        byte[] chunk = new byte[chunkSize];
+        int bytesRead;
+        while ((bytesRead = stream.read(chunk)) != -1) {
+            if (shouldStop()) {
+                throw new InterruptedIOException("cancelled");
+            }
+            buffer.write(chunk, 0, bytesRead);
+        }
+        return buffer.toByteArray();
+    }
+
+    private static boolean isJpeg(byte[] data) {
+        return data.length >= 2
+                && (data[0] & 0xFF) == 0xFF
+                && (data[1] & 0xFF) == 0xD8;
+    }
+
+    private static void writeRawTile(Path tilePath, byte[] data) throws IOException {
+        Files.write(
+                tilePath,
+                data,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING
+        );
+    }
+
+    private static void writeJpegAsPng(Path tilePath, byte[] jpegData) throws IOException {
+        try (ByteArrayInputStream input = new ByteArrayInputStream(jpegData);
+             OutputStream out = Files.newOutputStream(
+                     tilePath,
+                     StandardOpenOption.CREATE,
+                     StandardOpenOption.TRUNCATE_EXISTING)) {
+            BufferedImage image = ImageIO.read(input);
+            if (image == null) {
+                throw new IOException("Unable to decode JPEG tile for conversion");
+            }
+            if (!ImageIO.write(image, "png", out)) {
+                throw new IOException("Unable to encode PNG tile");
+            }
+        }
     }
 
     private static URL toSafeUrl(String url) throws IOException {
